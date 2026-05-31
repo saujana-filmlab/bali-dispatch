@@ -207,27 +207,31 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
  async function shorten() {
     if (!result) return;
     setShortening(true);
-    const alias = "saujanabali-" + result.orderNumber.replace(/[^a-zA-Z0-9-]/g,"-");
+    
+    const cleanOrderNum = result.orderNumber.replace(/[^a-zA-Z0-9-]/g,"-");
+    const baseAlias = "saujanabali-" + cleanOrderNum;
     
     try {
-      // Route through a standard proxy to bypass the browser's CORS security block
-      const urlWithAlias = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(result.url)}&alias=${encodeURIComponent(alias)}`;
-      let r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(urlWithAlias)}`);
-      let txt = await r.text();
+      // Attempt 1: Try the exact branded order number first
+      const url1 = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(result.url)}&alias=${baseAlias}`;
+      let r1 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url1)}`);
+      let txt1 = await r1.text();
       
-      if (txt.includes("http")) { 
-        setShortUrl(txt.trim()); 
+      if (txt1.includes("http")) { 
+        setShortUrl(txt1.trim()); 
       } else {
-        // If the custom alias is already taken, try again without the alias
-        const plainUrl = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(result.url)}`;
-        let r2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(plainUrl)}`);
+        // Attempt 2: If that alias is taken, add a short random string to the end to keep the branding
+        const randomCode = Math.random().toString(36).substring(2, 6);
+        const fallbackAlias = baseAlias + "-" + randomCode;
+        
+        const url2 = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(result.url)}&alias=${fallbackAlias}`;
+        let r2 = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url2)}`);
         let txt2 = await r2.text();
-        // Fallback to the long URL if it fails, so the user never gets stuck
+        
         setShortUrl(txt2.includes("http") ? txt2.trim() : result.url);
       }
     } catch(e) {
       console.error("Shortening failed:", e);
-      // Emergency fallback to the original long URL if network completely drops
       setShortUrl(result.url); 
     }
     

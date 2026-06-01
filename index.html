@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
   
-  <!-- App Icons -->
   <link rel="icon" type="image/png" href="dd-icon.png" />
   <link rel="apple-touch-icon" href="dd-icon.png" />
 
-  <!-- WhatsApp Link Preview -->
   <meta property="og:title" content="Saujana - Darkroom Dispatch" />
-  <meta property="og:description" content="Film Lab Bali Â· Operations Dashboard" />
+  <meta property="og:description" content="Film Lab Bali · Operations Dashboard" />
   <meta property="og:image" content="https://bali-darkroom.saujanalab.com/dd-icon.png" />
   <meta property="og:url" content="https://bali-darkroom.saujanalab.com/" />
   <meta property="og:type" content="website" />
@@ -64,17 +62,17 @@ async function apiCall(action, data=null) {
   } catch(e) { return {error:e.toString()}; }
 }
 
-const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "â€”";
+const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "-";
 const fmtDT   = ts => {
-  if (!ts) return "â€”";
+  if (!ts) return "-";
   const d = new Date(ts);
-  return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}) + " Â· " +
+  return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}) + " · " +
          d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 };
 
 const deliveryUrl = o => `${BASE_URL}?order=${encodeURIComponent(o.orderNumber)}&name=${encodeURIComponent(o.customerName||"Customer")}&film=${encodeURIComponent(o.film||"")}&link=${encodeURIComponent(o.driveLink||"")}${o.notes?"&notes="+encodeURIComponent(o.notes):""}`;
 
-// â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Styles --------------------------------------
 const css = {
   btn: (variant="primary") => ({
     padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"'Montserrat',sans-serif",
@@ -91,7 +89,7 @@ const css = {
   secLabel: {fontSize:9, letterSpacing:"0.4em", textTransform:"uppercase", color:"var(--muted)", marginBottom:16, display:"block"},
 };
 
-// â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Toast ---------------------------------------
 function Toast({msg}) {
   return msg ? (
     <div style={{position:"fixed",bottom:24,right:24,background:"var(--card)",
@@ -102,7 +100,7 @@ function Toast({msg}) {
   ) : null;
 }
 
-// â”€â”€ Lock Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Lock Screen ---------------------------------
 function LockScreen({onUnlock}) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -119,7 +117,7 @@ function LockScreen({onUnlock}) {
       <div style={{textAlign:"center", marginBottom: 40}}>
         <img src="saujana-dd.png" alt="Darkroom Dispatch Logo" style={{height: 180, maxWidth:"100%", objectFit:"contain", marginBottom: 16}}/>
         <div style={{fontSize:10,letterSpacing:"0.4em",textTransform:"uppercase",
-                     color:"var(--muted)"}}>Film Lab Bali Â· Operations</div>
+                     color:"var(--muted)"}}>Film Lab Bali · Operations</div>
       </div>
 
       <div style={{width:"100%",maxWidth:320,background:"var(--card)",
@@ -128,7 +126,7 @@ function LockScreen({onUnlock}) {
                      color:"var(--light)",marginBottom:20}}>Staff Access Only</div>
         <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
           onKeyDown={e=>e.key==="Enter"&&check()}
-          placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+          placeholder="••••••••"
           style={{textAlign:"center",fontSize:18,fontWeight:500,letterSpacing:"0.3em",marginBottom:12}}/>
         <button onClick={check} style={{...css.btn("blue"),width:"100%",padding:13}}>Enter</button>
         <div style={{fontSize:11,color:"var(--red)",marginTop:10,minHeight:16}}>{err}</div>
@@ -137,7 +135,7 @@ function LockScreen({onUnlock}) {
   );
 }
 
-// â”€â”€ Dispatch Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Dispatch Tab --------------------------------
 function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
@@ -189,7 +187,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   function removeRoll(i)    { setRolls(r=>r.filter((_,j)=>j!==i)); }
 
   async function generate() {
-    const film = rolls.filter(Boolean).join(" Â· ");
+    const film = rolls.filter(Boolean).join(" · ");
     if (!orderNo.trim()||!film||!driveLink.trim()) return;
     setGenerating(true);
     const name = selCust ? selCust.name : (custInput.trim()||"Customer");
@@ -201,7 +199,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     onOrderSaved({...saved, ...order}, selCust?.id);
     setResult({url, custName:name, orderNumber:order.orderNumber, film});
     setShortUrl(null); setCopied({}); setGenerating(false);
-    showToast("Order saved to Sheets âœ“");
+    showToast("Order saved to Sheets ✓");
   }
 
  async function shorten() {
@@ -258,22 +256,22 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   async function copyRich() {
     if (!result) return;
     const r = result;
-    const html = `<p>Hi <strong>${r.custName}</strong>! Your scans are ready ðŸŽžï¸</p><br><p><strong>Order Number: ${r.orderNumber}</strong></p><br><p>Please click the link below to access your scans:</p><br><p><a href="${r.url}"><strong>Get your scans here â†’</strong></a></p><br><p>Link active for <strong>7 days</strong>. Quote order number when collecting negatives.</p><br><p>Questions? <a href="https://wa.me/6282251318377"><strong>WhatsApp: +62 822 5131 8377</strong></a></p><br><p>Kind regards,<br><strong>Saujana Film Lab</strong><br>Bali, Indonesia</p>`;
+    const html = `<p>Hi <strong>${r.custName}</strong>! Your scans are ready 🎞️</p><br><p><strong>Order Number: ${r.orderNumber}</strong></p><br><p>Please click the link below to access your scans:</p><br><p><a href="${r.url}"><strong>Get your scans here →</strong></a></p><br><p>Link active for <strong>7 days</strong>. Quote order number when collecting negatives.</p><br><p>Questions? <a href="https://wa.me/6282251318377"><strong>WhatsApp: +62 822 5131 8377</strong></a></p><br><p>Kind regards,<br><strong>Saujana Film Lab</strong><br>Bali, Indonesia</p>`;
     await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"})})]);
-    showToast("Rich email copied â€” paste into Gmail!");
+    showToast("Rich email copied - paste into Gmail!");
   }
 
   function openGmail() {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready ðŸŽžï¸\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.url}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
+    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.url}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${custEmail?encodeURIComponent(custEmail):""}&su=${sub}&body=${body}`,"_blank");
   }
 
 function copyWhatsApp() {
     if (!result || !shortUrl) return;
-    const text = `Hi ${result.custName}! Your scans are ready ðŸŽžï¸\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
+    const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
     navigator.clipboard.writeText(text).then(()=>{
       setCopied(c=>({...c, wa:true}));
       showToast("WhatsApp text copied!");
@@ -329,7 +327,7 @@ function copyWhatsApp() {
               onChange={e=>{setCustInput(e.target.value); setSelCust(null); setCustEmail(""); setShowDrop(true);}}
               onFocus={()=>setShowDrop(true)}
               onBlur={()=>setTimeout(()=>setShowDrop(false),200)}
-              placeholder="Type to search or enter nameâ€¦"/>
+              placeholder="Type to search or enter name..."/>
 
             {showDrop && matches.length>0 && (
               <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:99,
@@ -339,19 +337,19 @@ function copyWhatsApp() {
                 {matches.map(c=>(
                   <div key={c.id} onMouseDown={()=>selectCust(c)}
                     style={{padding:"11px 14px",cursor:"pointer",borderBottom:"1px solid var(--border)",
-                            transition:"background 0.15s"}}
+                             transition:"background 0.15s"}}
                     onMouseEnter={e=>e.currentTarget.style.background="var(--blue-gl)"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div>
                         <div style={{fontSize:13,color:"var(--white)"}}>{c.name}</div>
                         <div style={{fontSize:10,color:"var(--muted)",marginTop:2}}>
-                          {c.email}{c.phone?` Â· ${c.phone}`:""}
+                          {c.email}{c.phone?` · ${c.phone}`:""}
                         </div>
                       </div>
                       {c.totalOrders>0&&<span style={{fontSize:9,background:"var(--ocean)",
                         color:"var(--white)",padding:"2px 8px",borderRadius:10,fontWeight:700}}>
-                        {c.totalOrders}Ã—</span>}
+                        {c.totalOrders}×</span>}
                     </div>
                   </div>
                 ))}
@@ -369,7 +367,7 @@ function copyWhatsApp() {
                     {selCust.totalOrders} prev. order{selCust.totalOrders!==1?"s":""}</span>}
                 </div>
                 <button onClick={clearCust}
-                  style={{background:"none",border:"none",color:"var(--muted)",fontSize:16}}>Ã—</button>
+                  style={{background:"none",border:"none",color:"var(--muted)",fontSize:16}}>×</button>
               </div>
             )}
           </div>
@@ -390,9 +388,9 @@ function copyWhatsApp() {
               {rolls.map((r,i)=>(
                 <div key={i} style={{display:"flex",gap:8,alignItems:"center"}}>
                   <input value={r} onChange={e=>updateRoll(i,e.target.value)}
-                    placeholder={`Roll ${i+1} â€” e.g. Portra 400 Â· 35mm`} style={{flex:1}}/>
+                    placeholder={`Roll ${i+1} - e.g. Portra 400 · 35mm`} style={{flex:1}}/>
                   {rolls.length>1&&<button onClick={()=>removeRoll(i)}
-                    style={{background:"none",border:"none",color:"var(--muted)",fontSize:18,padding:"0 4px"}}>Ã—</button>}
+                    style={{background:"none",border:"none",color:"var(--muted)",fontSize:18,padding:"0 4px"}}>×</button>}
                 </div>
               ))}
             </div>
@@ -412,7 +410,7 @@ function copyWhatsApp() {
 
           <button onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
-            {generating?"Savingâ€¦":"Generate Delivery Link"}
+            {generating?"Saving...":"Generate Delivery Link"}
           </button>
         </div>
       </div>
@@ -432,16 +430,16 @@ function copyWhatsApp() {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                 <button onClick={()=>copyText(result.url,"url")} style={{...css.btn(),padding:11}}>
-                  {copied.url?"Copied âœ“":"Copy Link"}
+                  {copied.url?"Copied ✓":"Copy Link"}
                 </button>
                 <a href={result.url} target="_blank" rel="noopener"
                   style={{...css.btn("ghost"),padding:11,display:"block",textAlign:"center",color:"var(--light)"}}>
-                  Preview â†’
+                  Preview →
                 </a>
               </div>
               <button onClick={shorten} disabled={shortening}
                 style={{...css.btn("ghost"),width:"100%",padding:11}}>
-                {shortening?"Shorteningâ€¦":"Shorten for WhatsApp / DM"}
+                {shortening?"Shortening...":"Shorten for WhatsApp / DM"}
               </button>
               {shortUrl&&(
                 <div style={{marginTop:10}}>
@@ -454,11 +452,11 @@ function copyWhatsApp() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <button onClick={()=>copyText(shortUrl,"short")}
                       style={{...css.btn(),width:"100%",padding:11}}>
-                      {copied.short?"Copied âœ“":"Copy Link"}
+                      {copied.short?"Copied ✓":"Copy Link"}
                     </button>
                     <button onClick={copyWhatsApp}
                       style={{...css.btn("ghost"),width:"100%",padding:11}}>
-                      {copied.wa?"Copied âœ“":"Copy for WA"}
+                      {copied.wa?"Copied ✓":"Copy for WA"}
                     </button>
                   </div>
                 </div>
@@ -469,10 +467,10 @@ function copyWhatsApp() {
               <span style={css.secLabel}>Email</span>
               <div style={{fontSize:12,lineHeight:1.9,color:"var(--light)",background:"var(--dark)",
                            border:"1px solid var(--border)",borderRadius:2,padding:18,marginBottom:12}}>
-                Hi <strong style={{color:"var(--white)"}}>{result.custName}</strong>! Your scans are ready ðŸŽžï¸<br/><br/>
+                Hi <strong style={{color:"var(--white)"}}>{result.custName}</strong>! Your scans are ready 🎞️<br/><br/>
                 <strong style={{color:"var(--white)"}}>Order Number: {result.orderNumber}</strong><br/><br/>
                 Please click the link below to access your scans:<br/><br/>
-                <span style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here â†’</span><br/><br/>
+                <span style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here →</span><br/><br/>
                 Link active for <strong style={{color:"var(--white)"}}>7 days</strong>. Quote order number when collecting negatives.<br/><br/>
                 Questions? WhatsApp us at <strong style={{color:"var(--white)"}}>+62 822 5131 8377</strong><br/><br/>
                 Kind regards,<br/>
@@ -480,7 +478,7 @@ function copyWhatsApp() {
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <button onClick={copyRich} style={{...css.btn(),padding:11}}>Copy for Gmail</button>
-                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Open in Gmail â†—</button>
+                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Open in Gmail ↗</button>
               </div>
             </div>
           </>
@@ -522,7 +520,7 @@ function copyWhatsApp() {
                       <span style={{fontSize:11,color:"var(--muted)"}}>{o.customerName}</span>
                     </div>
                     <div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>
-                      {fmtDT(o.createdAt)} Â· {o.film}
+                      {fmtDT(o.createdAt)} · {o.film}
                     </div>
                   </div>
                   <button onClick={()=>loadPastOrder(o)}
@@ -532,7 +530,7 @@ function copyWhatsApp() {
                   <a href={deliveryUrl(o)} target="_blank" rel="noopener"
                     style={{...css.btn("ghost"),padding:"7px 10px",fontSize:9,whiteSpace:"nowrap",
                       color:"var(--blue-l)",textDecoration:"none"}}>
-                    Open â†—
+                    Open ↗
                   </a>
                 </div>
               ))}
@@ -544,7 +542,7 @@ function copyWhatsApp() {
   );
 }
 
-// â”€â”€ Registry Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Registry Tab --------------------------------
 function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor}) {
   const [search, setSearch]       = useState("");
   const [sortBy, setSortBy]       = useState("name");
@@ -581,10 +579,10 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
     setSaving(true);
     if (editing==="new") {
       await onAdd(form);
-      showToast("Customer added âœ“");
+      showToast("Customer added ✓");
     } else {
       await onUpdate({...editing,...form});
-      showToast("Updated âœ“");
+      showToast("Updated ✓");
     }
     setEditing(null); setSaving(false);
   }
@@ -594,7 +592,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
     try {
       await onDelete(id);
       if (selected?.id===id) setSelected(null);
-      showToast("Removed âœ“");
+      showToast("Removed ✓");
     } catch(e) {
       showToast("Could not remove from Sheets");
     }
@@ -609,14 +607,14 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
         {/* Search + Add */}
         <div style={{display:"flex",gap:8}}>
           <input value={search} onChange={e=>{setSearch(e.target.value); setPage(1);}}
-            placeholder="Search name, email or phoneâ€¦" style={{flex:1,fontSize:12}}/>
+            placeholder="Search name, email or phone..." style={{flex:1,fontSize:12}}/>
           <button onClick={()=>{setEditing("new");setForm({name:"",email:"",phone:""}); }}
             style={{...css.btn("blue"),padding:"11px 14px",whiteSpace:"nowrap"}}>+ Add</button>
         </div>
 
         {/* Sort */}
         <div style={{display:"flex",gap:6}}>
-          {[{id:"name",l:"Aâ€“Z"},{id:"orders",l:"Most Orders"},{id:"recent",l:"Recent"}].map(s=>(
+          {[{id:"name",l:"A-Z"},{id:"orders",l:"Most Orders"},{id:"recent",l:"Recent"}].map(s=>(
             <button key={s.id} onClick={()=>{setSortBy(s.id); setPage(1);}} style={{
               flex:1,padding:7,background:"none",fontFamily:"'Montserrat',sans-serif",
               border:`1px solid ${sortBy===s.id?"var(--blue-l)":"var(--border)"}`,borderRadius:2,
@@ -635,7 +633,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
             </span>
             {[{id:"name",l:"Name *",ph:"Full name"},
               {id:"email",l:"Email *",ph:"email@example.com"},
-              {id:"phone",l:"Phone (optional)",ph:"+62 â€¦"}].map(f=>(
+              {id:"phone",l:"Phone (optional)",ph:"+62 ..."}].map(f=>(
               <div key={f.id} style={{marginBottom:10}}>
                 <label style={css.label}>{f.l}</label>
                 <input value={form[f.id]} onChange={e=>setForm(p=>({...p,[f.id]:e.target.value}))}
@@ -644,7 +642,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
             ))}
             <div style={{display:"flex",gap:8,marginTop:8}}>
               <button onClick={save} disabled={saving}
-                style={{...css.btn("blue"),flex:1}}>{saving?"Savingâ€¦":"Save"}</button>
+                style={{...css.btn("blue"),flex:1}}>{saving?"Saving...":"Save"}</button>
               <button onClick={()=>setEditing(null)}
                 style={{...css.btn("ghost"),flex:1}}>Cancel</button>
             </div>
@@ -653,8 +651,8 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
 
         {/* Count */}
         <div style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.25em",textTransform:"uppercase"}}>
-          {filtered.length} customer{filtered.length!==1?"s":""}{search?` Â· "${search}"`:""}
-          {filtered.length>pageSize?` Â· page ${currentPage}/${totalPages}`:""}
+          {filtered.length} customer{filtered.length!==1?"s":""}{search?` · "${search}"`:""}
+          {filtered.length>pageSize?` · page ${currentPage}/${totalPages}`:""}
         </div>
 
         {/* List */}
@@ -680,10 +678,10 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
                     <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontStyle:"italic",
                       color:selected?.id===c.id?"var(--blue-l)":"var(--white)"}}>{c.name}</span>
                     {c.totalOrders>0&&<span style={{fontSize:9,background:"var(--ocean)",color:"var(--white)",
-                      padding:"2px 8px",borderRadius:10,fontWeight:700}}>{c.totalOrders}Ã—</span>}
+                      padding:"2px 8px",borderRadius:10,fontWeight:700}}>{c.totalOrders}×</span>}
                   </div>
                   <div style={{fontSize:11,color:"var(--muted)",marginTop:3}}>
-                    {c.email}{c.phone?` Â· ${c.phone}`:""}
+                    {c.email}{c.phone?` · ${c.phone}`:""}
                   </div>
                   {c.lastOrderDate&&<div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>
                     Last: {fmtDate(c.lastOrderDate)}
@@ -693,7 +691,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
                   <button onClick={e=>{e.stopPropagation();setEditing(c);setForm({name:c.name,email:c.email,phone:c.phone||""});}}
                     style={{...css.btn("ghost"),padding:"4px 10px",fontSize:10}}>Edit</button>
                   <button onClick={e=>{e.stopPropagation();del(c.id);}}
-                    style={{...css.btn("danger"),padding:"4px 10px",fontSize:10}}>Ã—</button>
+                    style={{...css.btn("danger"),padding:"4px 10px",fontSize:10}}>×</button>
                 </div>
               </div>
             </div>
@@ -736,7 +734,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
                   style={{...css.btn("green"),fontSize:9,padding:"10px 16px"}}>+ New Order</button>
                 <button onClick={()=>setSelected(null)}
                   style={{background:"none",border:"1px solid var(--border)",borderRadius:2,
-                          color:"var(--muted)",fontSize:16,padding:"6px 12px"}}>Ã—</button>
+                          color:"var(--muted)",fontSize:16,padding:"6px 12px"}}>×</button>
               </div>
             </div>
 
@@ -776,7 +774,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
                   {o.driveLink&&<a href={deliveryUrl(o)} target="_blank" rel="noopener"
                     style={{...css.btn("ghost"),padding:"6px 10px",fontSize:9,whiteSpace:"nowrap",
                       color:"var(--blue-l)",textDecoration:"none"}}>
-                    Open scans â†—
+                    Open scans ↗
                   </a>}
                 </div>
               ))}
@@ -798,7 +796,7 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
   );
 }
 
-// â”€â”€ App Root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- App Root ------------------------------------
 function App() {
   const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
   const [tab, setTab]             = useState("dispatch");
@@ -868,14 +866,14 @@ function App() {
             <div>
               <img src="dd-horizontal.png" alt="Darkroom Dispatch Logo" style={{height:45, objectFit:"contain", display:"block"}}/>
               <div style={{fontSize:8,letterSpacing:"0.4em",textTransform:"uppercase",color:"var(--muted)",marginTop:8}}>
-                Film Lab Bali Â· Operations
+                Film Lab Bali · Operations
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
-              {syncing&&<span style={{fontSize:9,color:"var(--muted)",letterSpacing:"0.2em",textTransform:"uppercase"}}>Syncingâ€¦</span>}
-              <button onClick={load} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9}}>â†» Refresh</button>
+              {syncing&&<span style={{fontSize:9,color:"var(--muted)",letterSpacing:"0.2em",textTransform:"uppercase"}}>Syncing...</span>}
+              <button onClick={load} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9}}>↻ Refresh</button>
               <span style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.2em",textTransform:"uppercase"}}>
-                {customers.length} customers Â· {orders.length} orders
+                {customers.length} customers · {orders.length} orders
               </span>
             </div>
           </div>
@@ -898,7 +896,7 @@ function App() {
         {loading ? (
           <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
                        textTransform:"uppercase",color:"var(--dim)"}}>
-            Connecting to Google Sheetsâ€¦
+            Connecting to Google Sheets...
           </div>
         ) : tab==="dispatch" ? (
           <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
@@ -917,4 +915,3 @@ ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
 </html>
-

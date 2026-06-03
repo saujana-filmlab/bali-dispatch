@@ -70,9 +70,33 @@ const fmtDT   = ts => {
          d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 };
 
-const deliveryUrl = o => `${BASE_URL}?order=${encodeURIComponent(o.orderNumber)}&name=${encodeURIComponent(o.customerName||"Customer")}&film=${encodeURIComponent(o.film||"")}&link=${encodeURIComponent(o.driveLink||"")}${o.notes?"&notes="+encodeURIComponent(o.notes):""}`;
+const deliveryUrl = o => `${BASE_URL}/${o.orderNumber.replace(/[^0-9]/g, '')}`;
 
-// -- Styles --------------------------------------
+async function getShortLink(longUrl, orderNo) {
+  const now = new Date();
+  const dateCode = String(now.getDate()).padStart(2,"0") + String(now.getMonth()+1).padStart(2,"0");
+  const cleanOrderNum = (orderNo||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+  const alias = `saujana-bali-${dateCode}-${cleanOrderNum}`;
+  
+  const endpoints = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}&alias=${encodeURIComponent(alias)}`)}&_t=${Date.now()}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`)}&_t=${Date.now()}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`)}&_t=${Date.now()}`
+  ];
+
+  for (let ep of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); 
+      const res = await fetch(ep, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      const text = (await res.text()).trim();
+      if (text.startsWith("http")) return text;
+    } catch(e) {}
+  }
+  return longUrl; 
+}
+
 const css = {
   btn: (variant="primary") => ({
     padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"'Montserrat',sans-serif",
@@ -89,7 +113,6 @@ const css = {
   secLabel: {fontSize:9, letterSpacing:"0.4em", textTransform:"uppercase", color:"var(--muted)", marginBottom:16, display:"block"},
 };
 
-// -- Toast ---------------------------------------
 function Toast({msg}) {
   return msg ? (
     <div style={{position:"fixed",bottom:24,right:24,background:"var(--card)",
@@ -100,7 +123,6 @@ function Toast({msg}) {
   ) : null;
 }
 
-// -- Lock Screen ---------------------------------
 function LockScreen({onUnlock}) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -135,7 +157,6 @@ function LockScreen({onUnlock}) {
   );
 }
 
-// -- Dispatch Tab --------------------------------
 function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
@@ -145,8 +166,6 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
   const [result, setResult]       = useState(null);
-  const [shortUrl, setShortUrl]   = useState(null);
-  const [shortening, setShortening] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showDrop, setShowDrop]   = useState(false);
   const [copied, setCopied]       = useState({});
@@ -190,59 +209,19 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     const film = rolls.filter(Boolean).join(" · ");
     if (!orderNo.trim()||!film||!driveLink.trim()) return;
     setGenerating(true);
+    
     const name = selCust ? selCust.name : (custInput.trim()||"Customer");
     const order = {orderNumber:orderNo.trim().toUpperCase(), customerName:name, film, notes:notes.trim(), driveLink:driveLink.trim()};
-    const url = deliveryUrl(order);
-    const saved = await apiCall("addOrder",{
-      ...order, customerId:selCust?.id||"",
-    });
+    const longUrl = deliveryUrl(order);
+    
+    const saved = await apiCall("addOrder", { ...order, customerId:selCust?.id||"" });
     onOrderSaved({...saved, ...order}, selCust?.id);
-    setResult({url, custName:name, orderNumber:order.orderNumber, film});
-    setShortUrl(null); setCopied({}); setGenerating(false);
-    showToast("Order saved to Sheets ✓");
-  }
-
- async function shorten() {
-    if (!result) return;
-    setShortening(true);
-
-    const now = new Date();
-    const dateCode = String(now.getDate()).padStart(2,"0") + String(now.getMonth()+1).padStart(2,"0");
-    const cleanOrderNum = result.orderNumber
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g,"-")
-      .replace(/^-+|-+$/g,"");
-    const baseAlias = `saujana-bali-${dateCode}-${cleanOrderNum}`;
-
-    async function tryTinyUrl(alias) {
-      const api = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(result.url)}&alias=${encodeURIComponent(alias)}`;
-      const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(api)}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(()=>controller.abort(), 12000);
-      try {
-        const response = await fetch(proxy, {signal:controller.signal});
-        const text = (await response.text()).trim();
-        return text.startsWith("https://tinyurl.com/") ? text : null;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-
-    try {
-      let shortened = await tryTinyUrl(baseAlias);
-      for (let i = 0; !shortened && i < 3; i++) {
-        const randomCode = Math.random().toString(36).slice(2, 6);
-        shortened = await tryTinyUrl(`${baseAlias}-${randomCode}`);
-      }
-      setShortUrl(shortened || result.url);
-      showToast(shortened ? "Short link ready ✓" : "Shortener unavailable, using full link");
-    } catch(e) {
-      console.error("Shortening failed:", e);
-      setShortUrl(result.url);
-      showToast("Internet issue, using full link");
-    }
-
-    setShortening(false);
+    
+    const shortUrl = await getShortLink(longUrl, order.orderNumber);
+    
+    setResult({url: longUrl, shortUrl, custName:name, orderNumber:order.orderNumber, film});
+    setCopied({}); setGenerating(false);
+    showToast("Order saved and link generated ✓");
   }
 
   function copyText(text, key) {
@@ -265,13 +244,13 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.url}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
+    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${custEmail?encodeURIComponent(custEmail):""}&su=${sub}&body=${body}`,"_blank");
   }
 
-function copyWhatsApp() {
-    if (!result || !shortUrl) return;
-    const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
+  function copyWhatsApp() {
+    if (!result) return;
+    const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${result.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
     navigator.clipboard.writeText(text).then(()=>{
       setCopied(c=>({...c, wa:true}));
       showToast("WhatsApp text copied!");
@@ -295,13 +274,19 @@ function copyWhatsApp() {
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
     .slice(0,12);
 
-  function loadPastOrder(o) {
+  async function loadPastOrder(o) {
     const customer = customers.find(c=>c.id===o.customerId);
     setCustEmail(customer?.email || "");
-    setResult({url:deliveryUrl(o), custName:o.customerName||"Customer", orderNumber:o.orderNumber, film:o.film});
-    setShortUrl(null);
+    const longUrl = deliveryUrl(o);
+    
+    setResult(null);
+    showToast("Generating short link...");
+    
+    const shortUrl = await getShortLink(longUrl, o.orderNumber);
+    
+    setResult({url: longUrl, shortUrl, custName:o.customerName||"Customer", orderNumber:o.orderNumber, film:o.film});
     setCopied({});
-    showToast("Past order loaded");
+    showToast("Past order loaded ✓");
   }
 
   return (
@@ -410,7 +395,7 @@ function copyWhatsApp() {
 
           <button onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
-            {generating?"Saving...":"Generate Delivery Link"}
+            {generating?"Saving & Shortening...":"Generate Delivery Link"}
           </button>
         </div>
       </div>
@@ -422,45 +407,25 @@ function copyWhatsApp() {
           <>
             <div style={css.card}>
               <span style={css.secLabel}>Delivery Page Link</span>
-              <div onClick={()=>copyText(result.url,"url")} style={{background:"var(--dark)",
+              <div onClick={()=>copyText(result.shortUrl,"url")} style={{background:"var(--dark)",
                 border:"1px solid var(--border)",borderRadius:2,padding:"13px 16px",
-                fontSize:11,color:"var(--blue-l)",wordBreak:"break-all",lineHeight:1.6,
+                fontSize:12,color:"var(--blue-l)",wordBreak:"break-all",lineHeight:1.6,
                 cursor:"pointer",marginBottom:10}}>
-                {result.url}
+                {result.shortUrl}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                <button onClick={()=>copyText(result.url,"url")} style={{...css.btn(),padding:11}}>
+                <button onClick={()=>copyText(result.shortUrl,"url")} style={{...css.btn(),padding:11}}>
                   {copied.url?"Copied ✓":"Copy Link"}
                 </button>
-                <a href={result.url} target="_blank" rel="noopener"
-                  style={{...css.btn("ghost"),padding:11,display:"block",textAlign:"center",color:"var(--light)"}}>
-                  Preview →
+                <button onClick={copyWhatsApp} style={{...css.btn("ghost"),padding:11}}>
+                  {copied.wa?"Copied ✓":"Copy for WA"}
+                </button>
+              </div>
+              <div style={{textAlign:"center", marginTop:12}}>
+                <a href={result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
+                  Preview Delivery Page ↗
                 </a>
               </div>
-              <button onClick={shorten} disabled={shortening}
-                style={{...css.btn("ghost"),width:"100%",padding:11}}>
-                {shortening?"Shortening...":"Shorten for WhatsApp / DM"}
-              </button>
-              {shortUrl&&(
-                <div style={{marginTop:10}}>
-                  <span style={{...css.secLabel,marginTop:10}}>Short Link</span>
-                  <div onClick={()=>copyText(shortUrl,"short")} style={{background:"var(--dark)",
-                    border:"1px solid var(--border)",borderRadius:2,padding:"12px 16px",
-                    fontSize:12,color:"var(--blue-l)",cursor:"pointer",marginBottom:8}}>
-                    {shortUrl}
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <button onClick={()=>copyText(shortUrl,"short")}
-                      style={{...css.btn(),width:"100%",padding:11}}>
-                      {copied.short?"Copied ✓":"Copy Link"}
-                    </button>
-                    <button onClick={copyWhatsApp}
-                      style={{...css.btn("ghost"),width:"100%",padding:11}}>
-                      {copied.wa?"Copied ✓":"Copy for WA"}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div style={css.card}>
@@ -542,7 +507,6 @@ function copyWhatsApp() {
   );
 }
 
-// -- Registry Tab --------------------------------
 function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor}) {
   const [search, setSearch]       = useState("");
   const [sortBy, setSortBy]       = useState("name");
@@ -796,7 +760,6 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
   );
 }
 
-// -- App Root ------------------------------------
 function App() {
   const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
   const [tab, setTab]             = useState("dispatch");

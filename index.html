@@ -70,8 +70,8 @@ const fmtDT   = ts => {
          d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 };
 
-const deliveryUrl = o => `${BASE_URL}/${o.orderNumber.replace(/[^0-9]/g, '')}`;
-
+const deliveryUrl = o =>
+  `${BASE_URL}/?order=${encodeURIComponent(o.orderNumber)}`;
 async function getShortLink(longUrl, orderNo) {
   const now = new Date();
   const dateCode = String(now.getDate()).padStart(2,"0") + String(now.getMonth()+1).padStart(2,"0");
@@ -210,14 +210,25 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     if (!orderNo.trim()||!film||!driveLink.trim()) return;
     setGenerating(true);
     
-    const name = selCust ? selCust.name : (custInput.trim()||"Customer");
-    const order = {orderNumber:orderNo.trim().toUpperCase(), customerName:name, film, notes:notes.trim(), driveLink:driveLink.trim()};
-    const longUrl = deliveryUrl(order);
-    
-    const saved = await apiCall("addOrder", { ...order, customerId:selCust?.id||"" });
-    onOrderSaved({...saved, ...order}, selCust?.id);
-    
-    const shortUrl = await getShortLink(longUrl, order.orderNumber);
+    const name = selCust ? selCust.name : (custInput.trim() || "Customer");
+
+const order = {
+  orderNumber: String(orderNo || "").trim().toUpperCase(),
+  customerName: name,
+  film,
+  notes: notes.trim(),
+  driveLink: driveLink.trim()
+};
+
+const longUrl = deliveryUrl(order); 
+const saved = await apiCall("addOrder", {
+  ...order,
+  customerId: selCust?.id || ""
+});
+
+onOrderSaved({ ...saved, ...order }, selCust?.id);
+
+const shortUrl = await getShortLink(longUrl, order.orderNumber);
     
     setResult({url: longUrl, shortUrl, custName:name, orderNumber:order.orderNumber, film});
     setCopied({}); setGenerating(false);
@@ -265,7 +276,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     .filter(o=>{
       const q = orderSearch.toLowerCase();
       return hasOrderSearch && (
-        String(o.orderNumber||"").toLowerCase().includes(q) ||
+        String(o.orderNumber || "").toLowerCase().includes(q) ||
         String(o.customerName||"").toLowerCase().includes(q) ||
         String(o.film||"").toLowerCase().includes(q) ||
         String(o.notes||"").toLowerCase().includes(q)
@@ -274,19 +285,36 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))
     .slice(0,12);
 
-  async function loadPastOrder(o) {
-    const customer = customers.find(c=>c.id===o.customerId);
-    setCustEmail(customer?.email || "");
+ async function loadPastOrder(o) {
+    // 1. Find the customer or default to empty
+    const customer = customers.find(c => c.id === o.customerId) || null;
+
+    // 2. Explicitly sanitize all data before setting state
+    // We use (val || "") to ensure React always gets a string, never undefined
+    setOrderNo(String(o.orderNumber || ""));
+    setCustInput(o.customerName || "");
+    setCustEmail(customer ? (customer.email || "") : "");
+    setSelCust(customer);
+    
+    // Split film string safely
+    const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
+    setRolls(rollsArray);
+    
+    setDriveLink(o.driveLink || "");
+    setNotes(o.notes || "");
+    
+    // 3. Update result UI
     const longUrl = deliveryUrl(o);
+    setResult({
+        url: longUrl, 
+        shortUrl: longUrl, 
+        custName: o.customerName || "Customer", 
+        orderNumber: o.orderNumber || "",
+        film: o.film || ""
+    });
     
-    setResult(null);
-    showToast("Generating short link...");
-    
-    const shortUrl = await getShortLink(longUrl, o.orderNumber);
-    
-    setResult({url: longUrl, shortUrl, custName:o.customerName||"Customer", orderNumber:o.orderNumber, film:o.film});
     setCopied({});
-    showToast("Past order loaded ✓");
+    showToast("Memories Digged! ✓");
   }
 
   return (
@@ -520,12 +548,16 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
 
-  const filtered = customers
-    .filter(c=>{
-      const q=search.toLowerCase();
-      return c.name.toLowerCase().includes(q)||c.email.toLowerCase().includes(q)||(c.phone&&c.phone.includes(q));
-    })
-    .sort((a,b)=>
+const filtered = customers
+  .filter(c => {
+    const q = search.toLowerCase();
+
+    return (
+      String(c.name || "").toLowerCase().includes(q) ||
+      String(c.email || "").toLowerCase().includes(q) ||
+      String(c.phone || "").toLowerCase().includes(q)
+    );
+  })    .sort((a,b)=>
       sortBy==="orders"?(b.totalOrders||0)-(a.totalOrders||0):
       sortBy==="recent"?(b.lastOrderDate||0)-(a.lastOrderDate||0):
       a.name.localeCompare(b.name)
@@ -845,7 +877,7 @@ function App() {
               <button key={t.id} onClick={()=>setTab(t.id)} style={{
                 padding:"10px 24px",background:"none",
                 border:"none",borderBottom:`2px solid ${tab===t.id?"var(--blue-l)":"transparent"}`,
-                color:tab===t.id?"var(--white)":"var(--muted)",
+                color:tab===t.id?"var(--white)":"var(--muturled)",
                 fontFamily:"'Montserrat',sans-serif",fontSize:10,
                 fontWeight:tab===t.id?500:300,letterSpacing:"0.2em",textTransform:"uppercase",cursor:"pointer",
               }}>{t.l}</button>

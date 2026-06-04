@@ -72,38 +72,30 @@ const fmtDT   = ts => {
 
 const deliveryUrl = o => {
   if (!o || typeof o !== 'object') return BASE_URL;
-  
   const orderNum = (o.orderNumber || "").toString();
-  const name = (o.customerName || "Customer").toString();
-  const film = (o.film || "").toString();
-  const link = (o.driveLink || "").toString();
-  
-  return `${BASE_URL}/#/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}`;
+  const name     = (o.customerName || "Customer").toString();
+  const film     = (o.film || "").toString();
+  // Drive link + notes fetched from Sheets by delivery page — keeps URL short
+  return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}`;
 };
 
-async function getShortLink(longUrl, orderNo) {
-  const now = new Date();
-  const dateCode = String(now.getDate()).padStart(2,"0") + String(now.getMonth()+1).padStart(2,"0");
-  const cleanOrderNum = (orderNo||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-  const alias = `saujana-bali-${dateCode}-${cleanOrderNum}`;
-  
-  const endpoints = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}&alias=${encodeURIComponent(alias)}`)}&_t=${Date.now()}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`)}&_t=${Date.now()}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`)}&_t=${Date.now()}`
+async function getShortLink(longUrl) {
+  // is.gd supports CORS natively — no proxy needed, fast and reliable
+  const services = [
+    `https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`,
+    `https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`,
   ];
-
-  for (let ep of endpoints) {
+  for (const endpoint of services) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); 
-      const res = await fetch(ep, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(endpoint, { signal: controller.signal });
+      clearTimeout(timeout);
       const text = (await res.text()).trim();
       if (text.startsWith("http")) return text;
     } catch(e) {}
   }
-  return longUrl; 
+  return longUrl; // fallback to full URL if both fail
 }
 const css = {
   btn: (variant="primary") => ({

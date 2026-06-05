@@ -75,8 +75,9 @@ const deliveryUrl = o => {
   const orderNum = (o.orderNumber || "").toString();
   const name     = (o.customerName || "Customer").toString();
   const film     = (o.film || "").toString();
-  // Drive link + notes fetched from Sheets by delivery page — keeps URL short
-  return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}`;
+  const link     = (o.driveLink || "").toString();
+  // Notes excluded from URL — fetched from Sheets by delivery page
+  return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}`;
 };
 
 async function getShortLink(longUrl) {

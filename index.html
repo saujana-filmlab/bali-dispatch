@@ -55,13 +55,22 @@ const PASSWORD = "8888";
 async function apiCall(action, data=null) {
   try {
     if (data) {
-      const r = await fetch(`${API}?action=${action}`, {method:"POST", body:JSON.stringify(data)});
+      const r = await fetch(`${API}?action=${action}`, {
+        method: "POST", 
+        redirect: "follow",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(data)
+      });
       return await r.json();
     }
+    // For GET requests when no data is passed
     return await (await fetch(`${API}?action=${action}`)).json();
-  } catch(e) { return {error:e.toString()}; }
+  } catch(e) { 
+    return {error: e.toString()}; 
+  }
 }
-
 const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "-";
 const fmtDT   = ts => {
   if (!ts) return "-";
@@ -168,6 +177,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [notes, setNotes]         = useState("");
   const [result, setResult]       = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [showDrop, setShowDrop]   = useState(false);
   const [copied, setCopied]       = useState({});
   const [toast, setToast]         = useState("");
@@ -205,6 +215,27 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   function addRoll()        { setRolls(r=>[...r,""]); }
   function updateRoll(i,v)  { setRolls(r=>r.map((x,j)=>j===i?v:x)); }
   function removeRoll(i)    { setRolls(r=>r.filter((_,j)=>j!==i)); }
+
+  async function createFolder() {
+    if (!orderNo.trim()) {
+      showToast("Enter an order number first");
+      return;
+    }
+    setCreatingFolder(true);
+    const name = selCust ? selCust.name : (custInput.trim() || "");
+    const res = await apiCall("createFolder", {
+      orderNumber: orderNo.trim().toUpperCase(),
+      customerName: name,
+    });
+    if (res && res.folderUrl) {
+      setDriveLink(res.folderUrl);
+      showToast(`Folder ready: ${res.folderName} ✓`);
+      window.open(res.folderUrl, "_blank");
+    } else {
+      showToast(res?.error || "Could not create folder");
+    }
+    setCreatingFolder(false);
+  }
 
   async function generate() {
     const film = rolls.filter(Boolean).join(" · ");
@@ -410,12 +441,38 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
             </div>
           </div>
 
-          {/* Drive link */}
-          <div style={{marginBottom:18}}>
-            <label style={css.label}>Google Drive Link</label>
-            <input value={driveLink} onChange={e=>setDriveLink(e.target.value)} placeholder="Paste Drive folder link"/>
-          </div>
+         {/* Google Drive Link Block */}
+<div style={{marginBottom: 24}}>
+  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8}}>
+    <label style={{...css.label, marginBottom: 0}}>Google Drive Link</label>
+    <button onClick={createFolder} disabled={creatingFolder}
+      style={{...css.btn("ghost"), padding: "5px 10px", fontSize: 9, opacity: creatingFolder ? 0.5 : 1}}>
+      {creatingFolder ? "Creating…" : "📁 Create Drive Folder"}
+    </button>
+  </div>
+  
+  <input 
+    value={driveLink} 
+    onChange={e => setDriveLink(e.target.value)} 
+    placeholder="Paste Drive folder link, or create one above"
+  />
 
+  {/* Dynamic Access Button: Now styled like your "ghost" button */}
+  {driveLink && driveLink.startsWith("http") && (
+    <a href={driveLink} target="_blank" 
+       style={{
+         ...css.btn("ghost"), 
+         marginTop: 10, 
+         display: "block", 
+         textAlign: "center", 
+         textDecoration: "none",
+         padding: "8px",
+         fontSize: 11
+       }}>
+      📁 Access Drive Folder
+    </a>
+  )}
+</div>
           {/* Notes */}
           <div style={{marginBottom:24}}>
             <label style={css.label}>Order Notes <span style={{color:"var(--dim)",fontSize:9}}>optional</span></label>

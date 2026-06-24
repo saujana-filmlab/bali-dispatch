@@ -204,13 +204,69 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
       }).slice(0,8)
     : [];
 
+    const existingByEmail = customers.find(c =>
+  String(c.email || "").trim().toLowerCase() ===
+  String(custEmail || "").trim().toLowerCase()
+);
+
+const isNewCustomer =
+  custInput.trim() &&
+  custEmail.trim() &&
+  !selCust &&
+  !existingByEmail;
+
   function selectCust(c) {
     setSelCust(c); setCustInput(c.name); setCustEmail(c.email); setShowDrop(false);
   }
 
-  function clearCust() {
-    setSelCust(null); setCustInput(""); setCustEmail("");
+ function clearCust() {
+  setSelCust(null);
+  setCustInput("");
+  setCustEmail("");
+}
+
+async function addCustomer() {
+  const email = custEmail.trim().toLowerCase();
+
+  // double check before saving
+  const exists = customers.find(c =>
+    String(c.email || "").trim().toLowerCase() === email
+  );
+
+  if (exists) {
+    setSelCust(exists);
+    setCustInput(exists.name);
+    setCustEmail(exists.email);
+    showToast("Customer already exists ✓");
+    return;
   }
+
+  const res = await apiCall("addCustomer", {
+    name: custInput.trim(),
+    email,
+    phone: ""
+  });
+
+  console.log("ADD CUSTOMER RESPONSE:", res);
+
+  if (res?.id) {
+    const newCustomer = {
+      id: res.id,
+      name: custInput.trim(),
+      email,
+      phone: ""
+    };
+
+    setSelCust(newCustomer);
+    showToast("Customer added ✓");
+  } else {
+    showToast(res?.error || "Could not add customer");
+  }
+}
+
+function addRoll() {
+  setRolls(r => [...r, ""]);
+}
 
   function addRoll()        { setRolls(r=>[...r,""]); }
   function updateRoll(i,v)  { setRolls(r=>r.map((x,j)=>j===i?v:x)); }
@@ -419,15 +475,66 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
 
           {/* Email */}
           <div style={{marginBottom:18}}>
-            <label style={css.label}>Customer Email <span style={{color:"var(--dim)",fontSize:9}}>for Gmail</span></label>
-            <input value={custEmail} onChange={e=>setCustEmail(e.target.value)} placeholder="auto-filled from customer"/>
-          </div>
+  <label style={css.label}>
+    Customer Email <span style={{color:"var(--dim)",fontSize:9}}>for Gmail</span>
+  </label>
+
+  <input
+    value={custEmail}
+    onChange={e=>setCustEmail(e.target.value)}
+    placeholder="Auto-filled or enter customer email"
+  />
+
+  {isNewCustomer && (
+    <button 
+  onClick={addCustomer}
+  style={{
+    ...css.btn("ghost"),
+    padding:"5px 10px",
+    fontSize:9,
+    transition:"all 0.15s ease"
+  }}
+  onMouseEnter={e=>{
+    e.currentTarget.style.background="var(--blue-gl)";
+    e.currentTarget.style.color="var(--blue-l)";
+    e.currentTarget.style.transform="translateY(-1px)";
+  }}
+  onMouseLeave={e=>{
+    e.currentTarget.style.background="transparent";
+    e.currentTarget.style.color="var(--muted)";
+    e.currentTarget.style.transform="translateY(0)";
+  }}
+>
+  + Add New Customer
+</button>
+  )}
+</div>
 
           {/* Rolls */}
           <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
               <label style={{...css.label,marginBottom:0}}>Film Rolls</label>
-              <button onClick={addRoll} style={{...css.btn("ghost"),padding:"5px 10px",fontSize:9}}>+ Add Roll</button>
+              <button 
+  onClick={addRoll}
+  style={{
+    ...css.btn("ghost"),
+    padding:"5px 10px",
+    fontSize:9,
+    transition:"all 0.15s ease"
+  }}
+  onMouseEnter={e=>{
+    e.currentTarget.style.background="var(--blue-gl)";
+    e.currentTarget.style.color="var(--blue-l)";
+    e.currentTarget.style.transform="translateY(-1px)";
+  }}
+  onMouseLeave={e=>{
+    e.currentTarget.style.background="transparent";
+    e.currentTarget.style.color="var(--muted)";
+    e.currentTarget.style.transform="translateY(0)";
+  }}
+>
+  + Add Roll
+</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {rolls.map((r,i)=>(
@@ -445,10 +552,29 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
 <div style={{marginBottom: 24}}>
   <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8}}>
     <label style={{...css.label, marginBottom: 0}}>Google Drive Link</label>
-    <button onClick={createFolder} disabled={creatingFolder}
-      style={{...css.btn("ghost"), padding: "5px 10px", fontSize: 9, opacity: creatingFolder ? 0.5 : 1}}>
-      {creatingFolder ? "Creating…" : "📁 Create Drive Folder"}
-    </button>
+    <button 
+  onClick={createFolder}
+  disabled={creatingFolder}
+  style={{
+    ...css.btn("ghost"),
+    padding: "5px 10px",
+    fontSize: 9,
+    opacity: creatingFolder ? 0.5 : 1,
+    transition: "color 0.15s ease, background 0.15s ease"
+  }}
+  onMouseEnter={e => {
+    if (!creatingFolder) {
+      e.currentTarget.style.background = "var(--blue-gl)";
+      e.currentTarget.style.color = "var(--blue-l)";
+    }
+  }}
+  onMouseLeave={e => {
+    e.currentTarget.style.background = "transparent";
+    e.currentTarget.style.color = "var(--muted)";
+  }}
+>
+  {creatingFolder ? "Creating…" : "📁 Create Drive Folder"}
+</button>
   </div>
   
   <input 
@@ -458,19 +584,31 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
   />
 
   {/* Dynamic Access Button: Now styled like your "ghost" button */}
-  {driveLink && driveLink.startsWith("http") && (
-    <a href={driveLink} target="_blank" 
-       style={{
-         ...css.btn("ghost"), 
-         marginTop: 10, 
-         display: "block", 
-         textAlign: "center", 
-         textDecoration: "none",
-         padding: "8px",
-         fontSize: 11
-       }}>
-      📁 Access Drive Folder
-    </a>
+ {driveLink && driveLink.startsWith("http") && (
+  <a 
+    href={driveLink}
+    target="_blank"
+    onMouseEnter={e => {
+      e.currentTarget.style.background = "var(--blue-gl)";
+      e.currentTarget.style.color = "var(--blue-l)";
+    }}
+    onMouseLeave={e => {
+      e.currentTarget.style.background = "transparent";
+      e.currentTarget.style.color = "var(--muted)";
+    }}
+    style={{
+      ...css.btn("ghost"),
+      marginTop: 10,
+      display: "block",
+      textAlign: "center",
+      textDecoration: "none",
+      padding: "8px",
+      fontSize: 11,
+      transition: "background 0.15s ease, color 0.15s ease"
+    }}
+  >
+    📁 Access Drive Folder
+  </a>
   )}
 </div>
           {/* Notes */}

@@ -20,23 +20,84 @@
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
-      --black:#080a0f;--dark:#0d1117;--card:#111720;--card2:#161e2a;
-      --border:#1e2d42;--border2:#253448;
-      --blue:#1a6fa8;--blue-l:#2a8fd0;--blue-gl:#1b3a5c;--ocean:#0e4d7a;
-      --gold:#c8922a;--gold-l:#e8b84b;
-      --white:#f4f6fa;--light:#c8d4e0;--muted:#5a7080;--dim:#2a3a4a;
-      --green:#25d366;--greenD:#0d1f12;--greenB:#1a4028;--greenT:#5dd88a;
-      --red:#e05040;
-    }
-    body{background:var(--black);color:var(--white);font-family:'Montserrat',sans-serif;font-weight:300;min-height:100vh;}
-    ::-webkit-scrollbar{width:4px;}
-    ::-webkit-scrollbar-track{background:var(--dark);}
-    ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-    input,textarea{
-      width:100%;background:var(--dark);border:1px solid var(--border);border-radius:2px;
-      padding:12px 14px;color:var(--white);font-family:'Montserrat',sans-serif;
-      font-size:13px;font-weight:300;outline:none;transition:border-color 0.2s;
-    }
+  --black:#080a0f;--dark:#0d1117;--card:#111720;--card2:#161e2a;
+  --border:#1e2d42;--border2:#253448;
+  --blue:#1a6fa8;--blue-l:#2a8fd0;--blue-gl:#1b3a5c;--ocean:#0e4d7a;
+  --gold:#c8922a;--gold-l:#e8b84b;
+  --white:#f4f6fa;--light:#c8d4e0;--muted:#5a7080;--dim:#2a3a4a;
+  --green:#25d366;--greenD:#0d1f12;--greenB:#1a4028;--greenT:#5dd88a;
+  --red:#e05040;
+}
+
+@keyframes logoReveal {
+  0% {
+    opacity: 0;
+    transform: scale(2.5);
+    filter: brightness(0) contrast(6);
+  }
+
+  12% {
+    opacity: 1;
+    transform: scale(2.5);
+    filter: brightness(2.8) contrast(3);
+  }
+
+  20% {
+    filter: brightness(0.2) contrast(4);
+  }
+
+  35% {
+    filter: brightness(2);
+  }
+
+  70% {
+  transform: scale(1);
+  filter: brightness(1) contrast(1);
+}
+
+100% {
+  transform: scale(1);
+  filter: brightness(1) contrast(1);
+}
+}
+
+@keyframes subtitleReveal {
+  0% {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(4px);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+body {
+  background:var(--black);
+  color:var(--white);
+  font-family:'Montserrat',sans-serif;
+  font-weight:300;
+  min-height:100vh;
+}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--dark);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+input,textarea{
+  width:100%;
+  background:var(--dark);
+  border:1px solid var(--border);
+  border-radius:2px;
+  padding:12px 14px;
+  color:var(--white);
+  font-family:'Montserrat',sans-serif;
+  font-size:13px;
+  font-weight:300;
+  outline:none;
+  transition:border-color 0.2s;
+}
     input:focus,textarea:focus{border-color:var(--blue-l);}
     input::placeholder,textarea::placeholder{color:var(--dim);}
     button{cursor:pointer;font-family:'Montserrat',sans-serif;}
@@ -143,30 +204,102 @@ function LockScreen({onUnlock}) {
   }
 
   return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                 minHeight:"100vh",background:"var(--black)",padding:24}}>
-      
-      <div style={{textAlign:"center", marginBottom: 40}}>
-        <img src="saujana-dd.png" alt="Darkroom Dispatch Logo" style={{height: 180, maxWidth:"100%", objectFit:"contain", marginBottom: 16}}/>
-        <div style={{fontSize:10,letterSpacing:"0.4em",textTransform:"uppercase",
-                     color:"var(--muted)"}}>Film Lab Bali · Operations</div>
+  <div style={{
+    display:"flex",
+    flexDirection:"column",
+    alignItems:"center",
+    justifyContent:"center",
+    minHeight:"100vh",
+    background:"var(--black)",
+    padding:24
+  }}>
+
+    <div style={{textAlign:"center", marginBottom:40}}>
+      <img
+        src="saujana-dd.png"
+        alt="Darkroom Dispatch Logo"
+        style={{
+  height:180,
+  maxWidth:"100%",
+  objectFit:"contain",
+  marginBottom:16,
+  animation:"logoReveal 2.2s cubic-bezier(.2,.9,.3,1) forwards",
+  transformOrigin:"center center",
+  backfaceVisibility:"hidden",
+  willChange:"transform, filter"
+}}
+      />
+
+      <div style={{
+  fontSize:10,
+  letterSpacing:"0.4em",
+  textTransform:"uppercase",
+  color:"var(--muted)",
+  opacity:0,
+  animation:"subtitleReveal 0.8s steps(6) 2.2s forwards"
+}}>
+  Film Lab Bali · Operations
+</div>
+    </div>
+
+    <div style={{
+      width:"100%",
+      maxWidth:320,
+      background:"var(--card)",
+      border:"1px solid var(--border)",
+      borderRadius:3,
+      padding:"30px",
+      textAlign:"center"
+    }}>
+      <div style={{
+        fontSize:11,
+        letterSpacing:"0.3em",
+        textTransform:"uppercase",
+        color:"var(--light)",
+        marginBottom:20
+      }}>
+        Staff Access Only
       </div>
 
-      <div style={{width:"100%",maxWidth:320,background:"var(--card)",
-                   border:"1px solid var(--border)", borderRadius:3,padding:"30px",textAlign:"center"}}>
-        <div style={{fontSize:11,letterSpacing:"0.3em",textTransform:"uppercase",
-                     color:"var(--light)",marginBottom:20}}>Staff Access Only</div>
-        <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&check()}
-          placeholder="••••••••"
-          style={{textAlign:"center",fontSize:18,fontWeight:500,letterSpacing:"0.3em",marginBottom:12}}/>
-        <button onClick={check} style={{...css.btn("blue"),width:"100%",padding:13}}>Enter</button>
-        <div style={{fontSize:11,color:"var(--red)",marginTop:10,minHeight:16}}>{err}</div>
+      <input
+        type="password"
+        value={pw}
+        onChange={e=>setPw(e.target.value)}
+        onKeyDown={e=>e.key==="Enter" && check()}
+        placeholder="••••••••"
+        style={{
+          textAlign:"center",
+          fontSize:18,
+          fontWeight:500,
+          letterSpacing:"0.3em",
+          marginBottom:12
+        }}
+      />
+
+      <button
+        onClick={check}
+        style={{
+          ...css.btn("blue"),
+          width:"100%",
+          padding:13
+        }}
+      >
+        Enter
+      </button>
+
+      <div style={{
+        fontSize:11,
+        color:"var(--red)",
+        marginTop:10,
+        minHeight:16
+      }}>
+        {err}
       </div>
     </div>
-  );
-}
 
+  </div>
+);
+}
 function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
@@ -1073,7 +1206,7 @@ function App() {
               <button key={t.id} onClick={()=>setTab(t.id)} style={{
                 padding:"10px 24px",background:"none",
                 border:"none",borderBottom:`2px solid ${tab===t.id?"var(--blue-l)":"transparent"}`,
-                color:tab===t.id?"var(--white)":"var(--muturled)",
+                color:tab===t.id?"var(--white)":"var(--muted)",
                 fontFamily:"'Montserrat',sans-serif",fontSize:10,
                 fontWeight:tab===t.id?500:300,letterSpacing:"0.2em",textTransform:"uppercase",cursor:"pointer",
               }}>{t.l}</button>

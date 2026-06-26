@@ -305,6 +305,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [custInput, setCustInput] = useState("");
   const [selCust, setSelCust]     = useState(null);
   const [custEmail, setCustEmail] = useState("");
+  const [custPhone, setCustPhone] = useState("");
   const [rolls, setRolls]         = useState([""]);
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
@@ -322,6 +323,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
       setSelCust(prefill);
       setCustInput(prefill.name || "");
       setCustEmail(prefill.email || "");
+      setCustPhone(prefill.phone || "");
       if (clearPrefill) clearPrefill();
     }
   }, [prefill, clearPrefill]);
@@ -329,14 +331,23 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
 
  const matches = custInput.length > 0 && !selCust
-    ? customers.filter(c => {
-        const q = custInput.toLowerCase();
-        return String(c.name || "").toLowerCase().includes(q) ||
-               String(c.email || "").toLowerCase().includes(q) ||
-               String(c.phone || "").toLowerCase().includes(q);
-      }).slice(0,8)
-    : [];
+  ? customers.filter(c => {
+      const q = custInput.toLowerCase();
+      return String(c.name || "").toLowerCase().includes(q) ||
+             String(c.email || "").toLowerCase().includes(q) ||
+             String(c.phone || "").toLowerCase().includes(q);
+    }).slice(0,8)
+  : [];
 
+const customerChanged =
+  selCust &&
+  (
+    (custInput || "") !== (selCust.name || "") ||
+    (custEmail || "") !== (selCust.email || "") ||
+    (custPhone || "") !== (selCust.phone || "")
+  );
+
+    
     const existingByEmail = customers.find(c =>
   String(c.email || "").trim().toLowerCase() ===
   String(custEmail || "").trim().toLowerCase()
@@ -348,16 +359,22 @@ const isNewCustomer =
   !selCust &&
   !existingByEmail;
 
-  function selectCust(c) {
-    setSelCust(c); setCustInput(c.name); setCustEmail(c.email); setShowDrop(false);
-  }
-
  function clearCust() {
   setSelCust(null);
   setCustInput("");
   setCustEmail("");
+  setCustPhone("");
 }
 
+function selectCust(c) {
+ console.log("SELECTED CUSTOMER:", JSON.stringify(c, null, 2));
+
+  setSelCust(c);
+  setCustInput(c.name);
+  setCustEmail(c.email);
+  setCustPhone(c.phone || "");
+  setShowDrop(false);
+}
 async function addCustomer() {
   const email = custEmail.trim().toLowerCase();
 
@@ -374,21 +391,21 @@ async function addCustomer() {
     return;
   }
 
-  const res = await apiCall("addCustomer", {
-    name: custInput.trim(),
-    email,
-    phone: ""
-  });
+ const res = await apiCall("addCustomer", {
+  name: custInput.trim(),
+  email,
+  phone: custPhone.trim()
+});
 
   console.log("ADD CUSTOMER RESPONSE:", res);
 
   if (res?.id) {
     const newCustomer = {
-      id: res.id,
-      name: custInput.trim(),
-      email,
-      phone: ""
-    };
+  id: res.id,
+  name: custInput.trim(),
+  email,
+  phone: custPhone.trim()
+};
 
     setSelCust(newCustomer);
     showToast("Customer added ✓");
@@ -396,7 +413,22 @@ async function addCustomer() {
     showToast(res?.error || "Could not add customer");
   }
 }
+async function updateCustomerInfo() {
+  if (!selCust) return;
 
+  const res = await apiCall("updateCustomer", {
+    id: selCust.id,
+    name: custInput.trim(),
+    email: custEmail.trim(),
+    phone: custPhone.trim()
+  });
+
+  if (res?.success) {
+    showToast("Customer updated ✓");
+  } else {
+    showToast(res?.error || "Could not update customer");
+  }
+}
 function addRoll() {
   setRolls(r => [...r, ""]);
 }
@@ -485,11 +517,41 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${result.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
     navigator.clipboard.writeText(text).then(()=>{
       setCopied(c=>({...c, wa:true}));
-      showToast("WhatsApp text copied!");
+      showToast("WhatsApp / DM text copied!");
       setTimeout(()=>setCopied(c=>({...c, wa:false})), 2000);
     });
   }
+function sendViaWhatsApp() {
+  if (!custPhone) {
+    showToast("well.. there's no phone number broski!");
+    return;
+  }
 
+  let phone = custPhone.replace(/\D/g, "");
+
+  // Indonesia local number → international
+  if (phone.startsWith("0")) {
+    phone = "62" + phone.slice(1);
+  }
+
+  const text = `Hi ${result.custName}! Your scans are ready 🎞️
+
+Order Number: ${result.orderNumber}
+
+Get your scans here:
+${result.shortUrl}
+
+Link active for 7 days. Quote order number when collecting negatives.
+
+Saujana Film Lab Bali`;
+
+  const message = encodeURIComponent(text);
+
+  window.open(
+    `https://wa.me/${phone}?text=${message}`,
+    "_blank"
+  );
+}
   const canGen = orderNo.trim() && rolls.some(Boolean) && driveLink.trim();
   const hasOrderSearch = orderSearch.trim().length > 0;
   const pastOrders = orders
@@ -513,9 +575,10 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     // 2. Explicitly sanitize all data before setting state
     // We use (val || "") to ensure React always gets a string, never undefined
     setOrderNo(String(o.orderNumber || ""));
-    setCustInput(o.customerName || "");
-    setCustEmail(customer ? (customer.email || "") : "");
-    setSelCust(customer);
+setCustInput(o.customerName || "");
+setCustEmail(customer ? (customer.email || "") : "");
+setCustPhone(customer ? (customer.phone || "") : "");
+setSelCust(customer);
     
     // Split film string safely
     const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
@@ -607,9 +670,12 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
           </div>
 
           {/* Email */}
-          <div style={{marginBottom:18}}>
+<div style={{marginBottom:18}}>
   <label style={css.label}>
-    Customer Email <span style={{color:"var(--dim)",fontSize:9}}>for Gmail</span>
+    Customer Email
+    <span style={{color:"var(--dim)",fontSize:9}}>
+      for Gmail
+    </span>
   </label>
 
   <input
@@ -617,10 +683,30 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     onChange={e=>setCustEmail(e.target.value)}
     placeholder="Auto-filled or enter customer email"
   />
+</div>
 
-  {isNewCustomer && (
-    <button 
-  onClick={addCustomer}
+{/* Phone */}
+<div style={{marginTop:22, marginBottom:18}}>
+  <label style={css.label}>
+    WhatsApp / Phone
+    <span style={{
+      color:"var(--dim)",
+      fontSize:8,
+      marginLeft:4
+    }}>
+      (optional)
+    </span>
+  </label>
+
+  <input
+    value={custPhone}
+    onChange={e=>setCustPhone(e.target.value)}
+    placeholder="0812xxxxxxx"
+  />
+  {customerChanged && (
+    <div style={{marginTop:10}}>
+      <button
+  onClick={updateCustomerInfo}
   style={{
     ...css.btn("ghost"),
     padding:"5px 10px",
@@ -637,11 +723,41 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     e.currentTarget.style.color="var(--muted)";
     e.currentTarget.style.transform="translateY(0)";
   }}
+  onMouseDown={e=>{
+    e.currentTarget.style.transform="translateY(0)";
+  }}
+  onMouseUp={e=>{
+    e.currentTarget.style.transform="translateY(-1px)";
+  }}
+>
+  ✎ Update Customer
+</button>
+    </div>
+  )}
+</div>
+
+  {isNewCustomer && (
+    <button 
+  onClick={addCustomer}
+  style={{
+    ...css.btn("ghost"),
+    padding:"5px 10px",
+    fontSize:9,
+    transition:"all 0.15s ease"
+  }}
+  onMouseEnter={e=>{
+    e.currentTarget.style.background="var(--blue-gl)";
+    e.currentTarget.style.transform="translateY(-1px)";
+  }}
+  onMouseLeave={e=>{
+    e.currentTarget.style.background="transparent";
+    e.currentTarget.style.color="var(--muted)";
+    e.currentTarget.style.transform="translateY(0)";
+  }}
 >
   + Add New Customer
 </button>
   )}
-</div>
 
           {/* Rolls */}
           <div style={{marginBottom:18}}>
@@ -770,13 +886,37 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
                 cursor:"pointer",marginBottom:10}}>
                 {result.shortUrl}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div style={{display:"grid",gridTemplateColumns: "repeat(3, 1fr)",gap:8,marginBottom:8}}>
                 <button onClick={()=>copyText(result.shortUrl,"url")} style={{...css.btn(),padding:11}}>
                   {copied.url?"Copied ✓":"Copy Link"}
                 </button>
                 <button onClick={copyWhatsApp} style={{...css.btn("ghost"),padding:11}}>
-                  {copied.wa?"Copied ✓":"Copy for WA"}
+                  {copied.wa?"Copied ✓":"Copy for WA / DM"}
                 </button>
+                <button
+  onClick={sendViaWhatsApp}
+  style={{
+    ...css.btn("ghost"),
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    padding: 11
+  }}
+>
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.149-.198.297-.768.966-.941 1.164-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.787-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.297-.497.099-.198.05-.372-.025-.521-.074-.149-.669-1.611-.916-2.206-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.075-.792.372s-1.04 1.016-1.04 2.479 1.065 2.875 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.626.711.226 1.359.194 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+    <path d="M20.52 3.449A11.86 11.86 0 0012.07 0C5.495 0 .144 5.351.144 11.928c0 2.105.55 4.16 1.595 5.972L0 24l6.255-1.64a11.944 11.944 0 005.815 1.484h.005c6.576 0 11.927-5.351 11.927-11.928a11.85 11.85 0 00-3.482-8.467zm-8.45 18.39h-.004a9.9 9.9 0 01-5.036-1.378l-.361-.214-3.713.974.991-3.62-.235-.372a9.89 9.89 0 01-1.52-5.301c.002-5.463 4.447-9.908 9.912-9.908a9.84 9.84 0 017.008 2.905 9.84 9.84 0 012.9 7.003c-.003 5.465-4.448 9.911-9.912 9.911z"/>
+  </svg>
+
+  <span>WhatsApp</span>
+</button>
               </div>
               <div style={{textAlign:"center", marginTop:12}}>
                 <a href={result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
@@ -911,7 +1051,29 @@ const filtered = customers
     }
     setEditing(null); setSaving(false);
   }
+async function updateCustomerInfo() {
+  if (!selCust) return;
 
+  const res = await apiCall("updateCustomer", {
+    id: selCust.id,
+    name: custInput.trim(),
+    email: custEmail.trim(),
+    phone: custPhone.trim()
+  });
+
+  if (res?.success) {
+  setSelCust({
+    ...selCust,
+    name: custInput.trim(),
+    email: custEmail.trim(),
+    phone: custPhone.trim()
+  });
+
+  showToast("Customer updated ✓");
+} else {
+  showToast(res?.error || "Could not update customer");
+}
+}
   async function del(id) {
     if (!confirm("Remove this customer?")) return;
     try {
@@ -1131,12 +1293,20 @@ function App() {
   const [prefill, setPrefill]     = useState(null);
 
   async function load() {
-    setLoading(true);
-    const [c,o] = await Promise.all([apiCall("getCustomers"),apiCall("getOrders")]);
-    setCustomers(Array.isArray(c)?c:[]);
-    setOrders(Array.isArray(o)?o:[]);
-    setLoading(false);
-  }
+  setLoading(true);
+
+  const [c, o] = await Promise.all([
+    apiCall("getCustomers"),
+    apiCall("getOrders")
+  ]);
+
+  console.log("CUSTOMERS API:", c);
+
+  setCustomers(Array.isArray(c) ? c : []);
+  setOrders(Array.isArray(o) ? o : []);
+
+  setLoading(false);
+}
 
   useEffect(()=>{ if(authed) load(); },[authed]);
 

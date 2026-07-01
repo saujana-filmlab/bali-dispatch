@@ -621,7 +621,7 @@ setSelCust(customer);
             <label style={css.label}>Customer</label>
             <input
               value={custInput}
-              onChange={e=>{setCustInput(e.target.value); setSelCust(null); setCustEmail(""); setShowDrop(true);}}
+              onChange={e=>{setCustInput(e.target.value); setShowDrop(true);}}
               onFocus={()=>setShowDrop(true)}
               onBlur={()=>setTimeout(()=>setShowDrop(false),200)}
               placeholder="Type to search or enter name..."/>

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -1372,7 +1372,7 @@ function App() {
             </div>
           </div>
           <div style={{display:"flex",marginTop:10}}>
-            {[{id:"dispatch",l:"Darkroom Dispatch"},{id:"registry",l:"Customer Registry"}].map(t=>(
+            {[{id:"dispatch",l:"Darkroom Dispatch"},{id:"registry",l:"Customer Registry"},{id:"stock",l:"Stock Count"}].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{
                 padding:"10px 24px",background:"none",
                 border:"none",borderBottom:`2px solid ${tab===t.id?"var(--blue-l)":"transparent"}`,
@@ -1395,13 +1395,457 @@ function App() {
         ) : tab==="dispatch" ? (
           <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
             prefill={prefill} clearPrefill={()=>setPrefill(null)}/>
-        ) : (
-          <Registry customers={customers} orders={orders}
-            onAdd={handleAdd} onUpdate={handleUpdate} onDelete={handleDelete}
-            onNewOrderFor={handleNewOrderFor}/>
+        ) : tab==="registry" ? (
+  <Registry customers={customers} orders={orders}
+    onAdd={handleAdd} onUpdate={handleUpdate} onDelete={handleDelete}
+    onNewOrderFor={handleNewOrderFor}/>
+) : (
+  <StockTracker/>
         )}
       </div>
     </>
+  );
+}
+
+
+// ── DEFAULT STOCK ITEMS ───────────────────────────────────
+const DEFAULT_STOCK = [
+  {category:"COLOR 35MM", items:[
+    {name:"Kodak ColorPlus 200", qty:0, sold:0, visible:true},
+    {name:"Kodak Portra 160", qty:0, sold:0, visible:true},
+    {name:"Kodak Portra 400", qty:0, sold:0, visible:true},
+    {name:"Kodak Ultramax 400", qty:0, sold:0, visible:true},
+    {name:"Kodak Gold 200", qty:0, sold:0, visible:true},
+    {name:"Lucky Film 200", qty:0, sold:0, visible:true},
+    {name:"Fuji 200", qty:0, sold:0, visible:true},
+    {name:"Fuji 400", qty:0, sold:0, visible:true},
+  ]},
+  {category:"BW 35MM", items:[
+    {name:"Kodak 400TX", qty:0, sold:0, visible:true},
+    {name:"Ilford HP5 400", qty:0, sold:0, visible:true},
+    {name:"Fomapan 400", qty:0, sold:0, visible:true},
+  ]},
+  {category:"120 FILM", items:[
+    {name:"Kodak Portra 400", qty:0, sold:0, visible:true},
+    {name:"Kodak Gold 200", qty:0, sold:0, visible:true},
+    {name:"Ilford HP5 400", qty:0, sold:0, visible:true},
+  ]},
+  {category:"COLOR 110 FILM", items:[
+    {name:"Lomo Purple", qty:0, sold:0, visible:true},
+    {name:"Lomo Lobster", qty:0, sold:0, visible:true},
+  ]},
+  {category:"CAMERA", items:[
+    {name:"Reto 3D Black", qty:0, sold:0, visible:true},
+    {name:"Reto 3D White", qty:0, sold:0, visible:true},
+  ]},
+];
+
+// ── STOCK TRACKER COMPONENT ───────────────────────────────
+function StockTracker() {
+  const [stock, setStock]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [report, setReport]       = useState("");
+  const [copied, setCopied]       = useState(false);
+  const [toast, setToast]         = useState("");
+  // Add item UI
+  const [addingTo, setAddingTo]   = useState(null); // category name
+  const [newItemName, setNewItemName] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageNew, setManageNew] = useState({category:"", name:"", qty:"0"});
+
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
+  const remainingQty = item => Math.max(0, (item.qty || 0) - (item.sold || 0));
+  const normalizeStock = categories => categories.map(cat => ({
+    ...cat,
+    items: (cat.items || []).map(item => ({
+      ...item,
+      qty: Number(item.qty) || 0,
+      sold: Number(item.sold) || 0,
+      visible: item.visible !== false,
+      lastUpdated: item.lastUpdated || ""
+    }))
+  }));
+  const finalizeStock = categories => categories.map(cat => ({
+    ...cat,
+    items: (cat.items || []).map(item => ({
+      ...item,
+      qty: remainingQty(item),
+      sold: 0,
+      visible: item.visible !== false
+    }))
+  }));
+
+  // Load stock from Sheets
+  useEffect(() => { loadStock(); }, []);
+
+  async function loadStock() {
+    setLoading(true);
+    try {
+      const res = await apiCall("getStock");
+      if (res && Array.isArray(res) && res.length > 0) {
+        setStock(normalizeStock(res));
+      } else {
+        setStock(normalizeStock(DEFAULT_STOCK));
+      }
+    } catch(e) {
+      setStock(normalizeStock(DEFAULT_STOCK));
+    }
+    setLoading(false);
+  }
+
+  async function saveStock() {
+    setSaving(true);
+    try {
+      const finalizedStock = finalizeStock(stock);
+      await apiCall("saveStock", {stock: finalizedStock});
+      setStock(finalizedStock);
+      showToast("Stock saved ✓");
+    } catch(e) {
+      showToast("Save failed");
+    }
+    setSaving(false);
+  }
+
+  function updateQty(catIdx, itemIdx, delta) {
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat,
+      items: cat.items.map((item, ii) => ii !== itemIdx ? item : {
+        ...item, sold: Math.max(0, (item.sold || 0) + delta)
+      })
+    });
+    setStock(updated);
+  }
+
+  function setQty(catIdx, itemIdx, val) {
+    const n = parseInt(val);
+    if (isNaN(n) || n < 0) return;
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat,
+      items: cat.items.map((item, ii) => ii !== itemIdx ? item : {...item, sold: n})
+    });
+    setStock(updated);
+  }
+
+  function setItemField(catIdx, itemIdx, field, val) {
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat,
+      items: cat.items.map((item, ii) => {
+        if (ii !== itemIdx) return item;
+        const nextVal = field === "qty" ? Math.max(0, parseInt(val) || 0) : val;
+        return {...item, [field]: nextVal};
+      })
+    });
+    setStock(updated);
+  }
+
+  function setItemVisible(catIdx, itemIdx, visible) {
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat,
+      items: cat.items.map((item, ii) => ii !== itemIdx ? item : {...item, visible})
+    });
+    setStock(updated);
+  }
+
+  function setItemCategory(catIdx, itemIdx, newCategory) {
+    const category = newCategory.trim().toUpperCase();
+    if (!category) return;
+    const movingItem = stock[catIdx]?.items?.[itemIdx];
+    if (!movingItem || stock[catIdx].category === category) return;
+
+    setStock(prev => {
+      let moved = false;
+      const withoutItem = prev
+        .map((cat, ci) => ci !== catIdx ? cat : {...cat, items: cat.items.filter((_, ii) => ii !== itemIdx)})
+        .filter(cat => cat.items.length > 0);
+      const updated = withoutItem.map(cat => {
+        if (cat.category !== category) return cat;
+        moved = true;
+        return {...cat, items: [...cat.items, movingItem]};
+      });
+      return moved ? updated : [...updated, {category, items:[movingItem]}];
+    });
+  }
+
+  function addItem(catIdx) {
+    if (!newItemName.trim()) return;
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat, items: [...cat.items, {name: newItemName.trim(), qty: 0, sold: 0, visible: true}]
+    });
+    setStock(updated);
+    setNewItemName("");
+    setAddingTo(null);
+  }
+
+  function addManagedItem() {
+    const category = manageNew.category.trim().toUpperCase();
+    const name = manageNew.name.trim();
+    if (!category || !name) return;
+    const qty = Math.max(0, parseInt(manageNew.qty) || 0);
+    let added = false;
+    const updated = stock.map(cat => {
+      if (cat.category !== category) return cat;
+      added = true;
+      return {...cat, items:[...cat.items, {name, qty, sold:0, visible:true}]};
+    });
+    setStock(added ? updated : [...updated, {category, items:[{name, qty, sold:0, visible:true}]}]);
+    setManageNew({category:"", name:"", qty:"0"});
+  }
+
+  function addCategory() {
+    const category = newCatName.trim().toUpperCase();
+    if (!category) return;
+    setStock(s => s.some(cat => cat.category === category) ? s : [...s, {category, items: []}]);
+    setNewCatName("");
+    setAddingCategory(false);
+    setAddingTo(category);
+  }
+
+  function generateReport() {
+    const now = new Date();
+    const day = now.getDate();
+    const month = now.toLocaleString("en-GB", {month:"long"});
+    const year = now.getFullYear();
+    const dateStr = `${day} ${month} ${year}`;
+
+    let lines = [`${dateStr}`, ``];
+    stock.forEach(cat => {
+      const visibleItems = (cat.items || []).filter(item => item.visible !== false);
+      const hasItems = visibleItems.length > 0;
+      if (!hasItems) return;
+      if (lines.length > 2) lines.push(``);
+      lines.push(`${cat.category}`);
+      visibleItems.forEach(item => {
+        lines.push(`${item.name} - ${remainingQty(item)}`);
+      });
+    });
+
+    setReport(lines.join("\n"));
+  }
+
+  function copyReport() {
+    navigator.clipboard.writeText(report).then(() => {
+      setCopied(true);
+      showToast("Report copied!");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  if (loading) return (
+    <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
+                 textTransform:"uppercase",color:"var(--dim)"}}>Loading stock...</div>
+  );
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      {toast && <div style={{position:"fixed",bottom:24,right:24,background:"var(--card)",
+        border:"1px solid var(--blue)",borderRadius:3,padding:"12px 20px",
+        fontSize:12,color:"var(--blue-l)",zIndex:999}}>{toast}</div>}
+
+      {/* Header row */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontStyle:"italic",color:"var(--white)"}}>
+            Stock Count
+          </div>
+          <div style={{fontSize:9,letterSpacing:"0.35em",textTransform:"uppercase",color:"var(--muted)",marginTop:4}}>
+            End of Day · Inventory Check
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={saveStock} disabled={saving}
+            style={{...css.btn("blue"),padding:"10px 18px",opacity:saving?0.5:1}}>
+            {saving?"Saving...":"Save Stock"}
+          </button>
+          <button onClick={generateReport}
+            style={{...css.btn("primary"),padding:"10px 18px"}}>
+            Generate Report
+          </button>
+        </div>
+      </div>
+
+      {/* Stock grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))",gap:12,marginBottom:16}}>
+        {stock.map((cat, catIdx) => {
+          const hasVisibleItems = (cat.items || []).some(item => item.visible !== false);
+          const isEmptyCategory = !cat.items || cat.items.length === 0;
+          const isAddingToCategory = addingTo === cat.category;
+          if (!hasVisibleItems && !isEmptyCategory && !isAddingToCategory) return null;
+          return (
+          <div key={catIdx} style={{...css.card,padding:0,overflow:"hidden"}}>
+            {/* Category header */}
+            <div style={{background:"var(--card2)",borderBottom:"1px solid var(--border)",
+                         padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.3em",
+                            textTransform:"uppercase",color:"var(--blue-l)"}}>{cat.category}</span>
+              <button onClick={()=>setAddingTo(addingTo===cat.category?null:cat.category)}
+                style={{background:"none",border:"none",color:"var(--muted)",
+                        fontSize:18,padding:"0 4px",lineHeight:1}}>+</button>
+            </div>
+
+            {/* Items */}
+            <div style={{padding:"8px 0"}}>
+              {cat.items.map((item, itemIdx) => item.visible === false ? null : (
+                <div key={itemIdx} style={{display:"grid",gridTemplateColumns:"1fr 72px 132px 82px",alignItems:"center",gap:8,
+                  padding:"10px 16px",borderBottom:"1px solid var(--border)"}}>
+                  <div style={{fontSize:13,color:"var(--white)"}}>{item.name}</div>
+                  <div>
+                    <div style={{fontSize:8,letterSpacing:"0.18em",textTransform:"uppercase",color:"var(--muted)",marginBottom:4}}>Current</div>
+                    <div style={{fontSize:14,fontWeight:600,color:"var(--light)"}}>{item.qty || 0}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,letterSpacing:"0.18em",textTransform:"uppercase",color:"var(--muted)",marginBottom:4}}>Sold Today</div>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <button onClick={()=>updateQty(catIdx,itemIdx,-1)}
+                      style={{...css.btn("ghost"),padding:"4px 10px",fontSize:14,lineHeight:1,
+                              minWidth:32,textAlign:"center"}}>−</button>
+                    <input
+                      type="number" value={item.sold||0} min="0"
+                      onChange={e=>setQty(catIdx,itemIdx,e.target.value)}
+                      style={{width:52,textAlign:"center",padding:"6px 4px",
+                              fontSize:14,fontWeight:600,color:"var(--white)"}}/>
+                    <button onClick={()=>updateQty(catIdx,itemIdx,1)}
+                      style={{...css.btn("blue"),padding:"4px 10px",fontSize:14,lineHeight:1,
+                              minWidth:32,textAlign:"center"}}>+</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,letterSpacing:"0.18em",textTransform:"uppercase",color:"var(--muted)",marginBottom:4}}>Remaining</div>
+                    <div style={{fontSize:14,fontWeight:600,color:"var(--greenT)"}}>{remainingQty(item)}</div>
+                  </div>
+                  <button type="button" aria-hidden="true"
+                    style={{display:"none",background:"none",border:"none",color:"var(--dim)",
+                            fontSize:14,padding:"0 2px",lineHeight:1}}>×</button>
+                </div>
+              ))}
+
+              {/* Add item inline */}
+              {addingTo===cat.category && (
+                <div style={{padding:"10px 16px",display:"flex",gap:8,borderTop:"1px solid var(--border)"}}>
+                  <input value={newItemName} onChange={e=>setNewItemName(e.target.value)}
+                    placeholder="New item name..."
+                    onKeyDown={e=>e.key==="Enter"&&addItem(catIdx)}
+                    style={{flex:1,padding:"8px 10px",fontSize:12}}/>
+                  <button onClick={()=>addItem(catIdx)}
+                    style={{...css.btn("blue"),padding:"8px 14px",fontSize:9}}>Add</button>
+                  <button onClick={()=>{setAddingTo(null);setNewItemName("");}}
+                    style={{...css.btn("ghost"),padding:"8px 10px",fontSize:9}}>Cancel</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )})}
+
+        {/* Add new category */}
+        <div style={{...css.card,display:"flex",flexDirection:"column",
+                     justifyContent:"center",alignItems:"center",minHeight:120,
+                     border:"1px dashed var(--border)",background:"transparent",cursor:"pointer"}}
+          onClick={()=>setAddingCategory(true)}>
+          {addingCategory ? (
+            <div onClick={e=>e.stopPropagation()} style={{width:"100%",padding:16,display:"flex",flexDirection:"column",gap:8}}>
+              <input value={newCatName} onChange={e=>setNewCatName(e.target.value)}
+                placeholder="Category name (e.g. ECN-2)"
+                onKeyDown={e=>e.key==="Enter"&&addCategory()}
+                style={{padding:"8px 10px",fontSize:12}} autoFocus/>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={e=>{e.stopPropagation();addCategory();}}
+                  style={{...css.btn("blue"),flex:1,padding:"8px"}}>Add Category</button>
+                <button onClick={e=>{e.stopPropagation();setAddingCategory(false);setNewCatName("");}}
+                  style={{...css.btn("ghost"),flex:1,padding:"8px"}}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{fontSize:24,color:"var(--dim)",marginBottom:6}}>+</div>
+              <div style={{fontSize:9,letterSpacing:"0.2em",textTransform:"uppercase",color:"var(--dim)"}}>
+                Add Category
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Manage items */}
+      <div style={{...css.card,marginBottom:16,padding:0,overflow:"hidden"}}>
+        <button onClick={()=>setManageOpen(v=>!v)}
+          style={{width:"100%",background:"var(--card2)",border:"none",borderBottom:manageOpen?"1px solid var(--border)":"none",
+                  padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.3em",textTransform:"uppercase",color:"var(--blue-l)"}}>
+            Manage Items
+          </span>
+          <span style={{fontSize:18,color:"var(--muted)",lineHeight:1}}>{manageOpen?"-":"+"}</span>
+        </button>
+
+        {manageOpen && (
+          <div style={{padding:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 90px 92px",gap:8,marginBottom:12}}>
+              <input value={manageNew.name}
+                onChange={e=>setManageNew(m=>({...m,name:e.target.value}))}
+                placeholder="New item name"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <input value={manageNew.category}
+                onChange={e=>setManageNew(m=>({...m,category:e.target.value}))}
+                placeholder="Category"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <input type="number" min="0" value={manageNew.qty}
+                onChange={e=>setManageNew(m=>({...m,qty:e.target.value}))}
+                placeholder="Qty"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <button onClick={addManagedItem}
+                style={{...css.btn("blue"),padding:"8px 10px",fontSize:9}}>Add Item</button>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {stock.flatMap((cat, catIdx) => (cat.items || []).map((item, itemIdx) => (
+                <div key={`${cat.category}-${itemIdx}-${item.name}`} style={{
+                  display:"grid",gridTemplateColumns:"1.4fr 1fr 78px 92px",gap:8,alignItems:"center",
+                  background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2,padding:8,
+                  opacity:item.visible===false?0.62:1
+                }}>
+                  <input value={item.name}
+                    onChange={e=>setItemField(catIdx,itemIdx,"name",e.target.value)}
+                    style={{padding:"7px 9px",fontSize:12}}/>
+                  <input defaultValue={cat.category}
+                    onBlur={e=>setItemCategory(catIdx,itemIdx,e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter") e.currentTarget.blur();}}
+                    style={{padding:"7px 9px",fontSize:12}}/>
+                  <input type="number" min="0" value={item.qty || 0}
+                    onChange={e=>setItemField(catIdx,itemIdx,"qty",e.target.value)}
+                    style={{padding:"7px 9px",fontSize:12,textAlign:"center"}}/>
+                  <button onClick={()=>setItemVisible(catIdx,itemIdx,item.visible===false)}
+                    style={{...css.btn(item.visible===false?"green":"ghost"),padding:"8px 10px",fontSize:9}}>
+                    {item.visible===false?"Restore":"Hide"}
+                  </button>
+                </div>
+              )))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Report output */}
+      {report && (
+        <div style={{...css.card,marginTop:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontSize:9,letterSpacing:"0.35em",textTransform:"uppercase",color:"var(--muted)"}}>
+              End of Day Report
+            </span>
+            <button onClick={copyReport}
+              style={{...css.btn(copied?"ghost":"primary"),padding:"8px 16px",fontSize:9}}>
+              {copied?"Copied ✓":"Copy Report"}
+            </button>
+          </div>
+          <pre style={{fontSize:13,lineHeight:1.9,color:"var(--white)",
+                       fontFamily:"'Montserrat',sans-serif",whiteSpace:"pre-wrap",
+                       background:"var(--dark)",border:"1px solid var(--border)",
+                       borderRadius:2,padding:16}}>
+            {report}
+          </pre>
+        </div>
+      )}
+    </div>
   );
 }
 

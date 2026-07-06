@@ -1455,6 +1455,7 @@ function StockTracker() {
   const [newCatName, setNewCatName] = useState("");
   const [manageOpen, setManageOpen] = useState(false);
   const [manageNew, setManageNew] = useState({category:"", name:"", qty:"0"});
+  const [manageSearch, setManageSearch] = useState("");
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
   const remainingQty = item => Math.max(0, (item.qty || 0) - (item.sold || 0));
@@ -1496,6 +1497,27 @@ function StockTracker() {
     setLoading(false);
   }
 
+  function buildReportText(sourceStock=stock) {
+    const now = new Date();
+    const day = now.getDate();
+    const month = now.toLocaleString("en-GB", {month:"long"});
+    const year = now.getFullYear();
+    const dateStr = `${day} ${month} ${year}`;
+
+    let lines = [`${dateStr}`, ``];
+    sourceStock.forEach(cat => {
+      const visibleItems = (cat.items || []).filter(item => item.visible !== false);
+      if (visibleItems.length === 0) return;
+      if (lines.length > 2) lines.push(``);
+      lines.push(`${cat.category}`);
+      visibleItems.forEach(item => {
+        lines.push(`${item.name} - ${remainingQty(item)}`);
+      });
+    });
+
+    return lines.join("\n");
+  }
+
   async function saveStock() {
     setSaving(true);
     try {
@@ -1503,6 +1525,21 @@ function StockTracker() {
       await apiCall("saveStock", {stock: finalizedStock});
       setStock(finalizedStock);
       showToast("Stock saved ✓");
+    } catch(e) {
+      showToast("Save failed");
+    }
+    setSaving(false);
+  }
+
+  async function finalizeAndGenerateReport() {
+    setSaving(true);
+    try {
+      const reportText = buildReportText(stock);
+      const finalizedStock = finalizeStock(stock);
+      await apiCall("saveStock", {stock: finalizedStock});
+      setStock(finalizedStock);
+      setReport(reportText);
+      showToast("Stock saved and report generated");
     } catch(e) {
       showToast("Save failed");
     }
@@ -1604,31 +1641,23 @@ function StockTracker() {
   }
 
   function generateReport() {
-    const now = new Date();
-    const day = now.getDate();
-    const month = now.toLocaleString("en-GB", {month:"long"});
-    const year = now.getFullYear();
-    const dateStr = `${day} ${month} ${year}`;
-
-    let lines = [`${dateStr}`, ``];
-    stock.forEach(cat => {
-      const visibleItems = (cat.items || []).filter(item => item.visible !== false);
-      const hasItems = visibleItems.length > 0;
-      if (!hasItems) return;
-      if (lines.length > 2) lines.push(``);
-      lines.push(`${cat.category}`);
-      visibleItems.forEach(item => {
-        lines.push(`${item.name} - ${remainingQty(item)}`);
-      });
-    });
-
-    setReport(lines.join("\n"));
+    setReport(buildReportText(stock));
   }
 
   function copyReport() {
     navigator.clipboard.writeText(report).then(() => {
       setCopied(true);
       showToast("Report copied!");
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function copyWhatsAppReport() {
+    const text = buildReportText(stock);
+    setReport(text);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      showToast("WhatsApp report copied");
       setTimeout(() => setCopied(false), 2000);
     });
   }
@@ -1655,13 +1684,13 @@ function StockTracker() {
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={saveStock} disabled={saving}
+          <button onClick={finalizeAndGenerateReport} disabled={saving}
             style={{...css.btn("blue"),padding:"10px 18px",opacity:saving?0.5:1}}>
-            {saving?"Saving...":"Save Stock"}
+            {saving?"Saving...":"Finalize + Save Report"}
           </button>
-          <button onClick={generateReport}
+          <button onClick={copyWhatsAppReport}
             style={{...css.btn("primary"),padding:"10px 18px"}}>
-            Generate Report
+            Copy WhatsApp
           </button>
         </div>
       </div>
@@ -1780,6 +1809,10 @@ function StockTracker() {
 
         {manageOpen && (
           <div style={{padding:16}}>
+            <input value={manageSearch}
+              onChange={e=>setManageSearch(e.target.value)}
+              placeholder="Search item or category..."
+              style={{padding:"9px 11px",fontSize:12,marginBottom:12}}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 90px 92px",gap:8,marginBottom:12}}>
               <input value={manageNew.name}
                 onChange={e=>setManageNew(m=>({...m,name:e.target.value}))}
@@ -1798,7 +1831,15 @@ function StockTracker() {
             </div>
 
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {stock.flatMap((cat, catIdx) => (cat.items || []).map((item, itemIdx) => (
+              {stock.flatMap((cat, catIdx) => (cat.items || [])
+                .map((item, itemIdx) => ({cat, catIdx, item, itemIdx}))
+                .filter(({cat, item}) => {
+                  const q = manageSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return String(item.name || "").toLowerCase().includes(q) ||
+                         String(cat.category || "").toLowerCase().includes(q);
+                })
+                .map(({cat, catIdx, item, itemIdx}) => (
                 <div key={`${cat.category}-${itemIdx}-${item.name}`} style={{
                   display:"grid",gridTemplateColumns:"1.4fr 1fr 78px 92px",gap:8,alignItems:"center",
                   background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2,padding:8,

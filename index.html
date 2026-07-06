@@ -483,7 +483,7 @@ onOrderSaved({ ...saved, ...order }, selCust?.id);
 
 const shortUrl = await getShortLink(longUrl, order.orderNumber);
     
-    setResult({url: longUrl, shortUrl, custName:name, orderNumber:order.orderNumber, film});
+    setResult({url: longUrl, shortUrl, custName:name, orderNumber:order.orderNumber, film, notes:order.notes});
     setCopied({}); setGenerating(false);
     showToast("Order saved and link generated ✓");
   }
@@ -496,11 +496,17 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     });
   }
 
+  const emailNotesText = r => r?.notes ? `\n\nNotes:\n${r.notes}` : "";
+  const emailNotesHtml = r => r?.notes
+    ? `<br><p><strong>Notes:</strong><br>${String(r.notes).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>")}</p>`
+    : "";
+
   async function copyRich() {
     if (!result) return;
     const r = result;
     const html = `<p>Hi <strong>${r.custName}</strong>! Your scans are ready 🎞️</p><br><p><strong>Order Number: ${r.orderNumber}</strong></p><br><p>Please click the link below to access your scans:</p><br><p><a href="${r.url}"><strong>Get your scans here →</strong></a></p><br><p>Link active for <strong>7 days</strong>. Quote order number when collecting negatives.</p><br><p>Questions? <a href="https://wa.me/6282251318377"><strong>WhatsApp: +62 822 5131 8377</strong></a></p><br><p>Kind regards,<br><strong>Saujana Film Lab</strong><br>Bali, Indonesia</p>`;
-    await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"})})]);
+    const htmlWithNotes = html.replace("</strong></p><br><p>Please click", `</strong></p>${emailNotesHtml(r)}<br><p>Please click`);
+    await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([htmlWithNotes],{type:"text/html"})})]);
     showToast("Rich email copied - paste into Gmail!");
   }
 
@@ -509,7 +515,10 @@ const shortUrl = await getShortLink(longUrl, order.orderNumber);
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
     const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${custEmail?encodeURIComponent(custEmail):""}&su=${sub}&body=${body}`,"_blank");
+    const bodyWithNotes = r.notes
+      ? encodeURIComponent(decodeURIComponent(body).replace(`Order: ${r.orderNumber}\n\nPlease`, `Order: ${r.orderNumber}${emailNotesText(r)}\n\nPlease`))
+      : body;
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${custEmail?encodeURIComponent(custEmail):""}&su=${sub}&body=${bodyWithNotes}`,"_blank");
   }
 
   function copyWhatsApp() {
@@ -594,7 +603,8 @@ setSelCust(customer);
         shortUrl: longUrl, 
         custName: o.customerName || "Customer", 
         orderNumber: o.orderNumber || "",
-        film: o.film || ""
+        film: o.film || "",
+        notes: o.notes || ""
     });
     
     setCopied({});
@@ -931,6 +941,12 @@ setSelCust(customer);
                            border:"1px solid var(--border)",borderRadius:2,padding:18,marginBottom:12}}>
                 Hi <strong style={{color:"var(--white)"}}>{result.custName}</strong>! Your scans are ready 🎞️<br/><br/>
                 <strong style={{color:"var(--white)"}}>Order Number: {result.orderNumber}</strong><br/><br/>
+                {result.notes && (
+                  <>
+                    <strong style={{color:"var(--white)"}}>Notes:</strong><br/>
+                    {result.notes}<br/><br/>
+                  </>
+                )}
                 Please click the link below to access your scans:<br/><br/>
                 <span style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here →</span><br/><br/>
                 Link active for <strong style={{color:"var(--white)"}}>7 days</strong>. Quote order number when collecting negatives.<br/><br/>

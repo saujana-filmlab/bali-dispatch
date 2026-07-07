@@ -29,6 +29,22 @@
   --red:#e05040;
 }
 
+body[data-theme="light"]{
+  --black:#f5f3ee;--dark:#ebe7df;--card:#ffffff;--card2:#f0ece4;
+  --border:#d8d0c3;--border2:#c8bdad;
+  --blue:#17618f;--blue-l:#1d79b5;--blue-gl:#dcecf6;--ocean:#1c6f9c;
+  --gold:#a8791e;--gold-l:#f4c542;
+  --white:#171a20;--light:#35404a;--muted:#6c756f;--dim:#a99f91;
+  --green:#128a43;--greenD:#e2f3e7;--greenB:#b8dcc5;--greenT:#167640;
+  --red:#c83f32;
+}
+
+body[data-theme="light"] .day-accent{
+  background:#f4c542 !important;
+  border-color:#c89516 !important;
+  color:#111111 !important;
+}
+
 @keyframes logoReveal {
   0% {
     opacity: 0;
@@ -80,6 +96,7 @@ body {
   font-family:'Montserrat',sans-serif;
   font-weight:300;
   min-height:100vh;
+  transition:background 0.2s,color 0.2s;
 }
 
 ::-webkit-scrollbar{width:4px;}
@@ -115,19 +132,55 @@ const PASSWORD = "8888";
 
 async function apiCall(action, data=null) {
   try {
+    const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
+    const readJson = async response => {
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        return {
+          error: `Google Sheets returned ${response.status || "a non-JSON response"}`,
+          detail: text.slice(0, 180)
+        };
+      }
+    };
+
     if (data) {
-      const r = await fetch(`${API}?action=${action}`, {
+      const r = await fetch(url, {
         method: "POST", 
         redirect: "follow",
+        cache: "no-store",
         headers: {
           "Content-Type": "text/plain;charset=utf-8"
         },
         body: JSON.stringify(data)
       });
-      return await r.json();
+      return await readJson(r);
     }
-    // For GET requests when no data is passed
-    return await (await fetch(`${API}?action=${action}`)).json();
+
+    let r;
+    try {
+      r = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        cache: "no-store"
+      });
+      const result = await readJson(r);
+      if (!result?.error) return result;
+    } catch (getErr) {
+      console.warn("GET API failed, retrying as POST:", getErr);
+    }
+
+    r = await fetch(url, {
+      method: "POST",
+      redirect: "follow",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: "{}"
+    });
+    return await readJson(r);
   } catch(e) { 
     return {error: e.toString()}; 
   }
@@ -665,7 +718,7 @@ Saujana Film Lab Bali`;
                           {c.email}{c.phone?` · ${c.phone}`:""}
                         </div>
                       </div>
-                      {c.totalOrders>0&&<span style={{fontSize:9,background:"var(--ocean)",
+                      {c.totalOrders>0&&<span className="day-accent" style={{fontSize:9,background:"var(--ocean)",
                         color:"var(--white)",padding:"2px 8px",borderRadius:10,fontWeight:700}}>
                         {c.totalOrders}×</span>}
                     </div>
@@ -681,7 +734,7 @@ Saujana Film Lab Bali`;
                 <div>
                   <span style={{fontSize:12,color:"var(--blue-l)",fontWeight:500}}>{selCust.name}</span>
                   <span style={{fontSize:11,color:"var(--muted)",marginLeft:8}}>{selCust.email}</span>
-                  {selCust.totalOrders>0&&<span style={{fontSize:10,color:"var(--muted)",marginLeft:8}}>
+                  {selCust.totalOrders>0&&<span className="day-accent" style={{fontSize:10,color:"var(--muted)",marginLeft:8,padding:"2px 8px",borderRadius:10,fontWeight:700}}>
                     {selCust.totalOrders} prev. order{selCust.totalOrders!==1?"s":""}</span>}
                 </div>
                 <button onClick={clearCust}
@@ -785,7 +838,8 @@ Saujana Film Lab Bali`;
 </div>
 
   {isNewCustomer && (
-    <button 
+<button
+  className="day-accent"
   onClick={addCustomer}
   style={{
     ...css.btn("ghost"),
@@ -914,7 +968,7 @@ Saujana Film Lab Bali`;
             <input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. handle with care"/>
           </div>
 
-          <button onClick={generate} disabled={!canGen||generating}
+          <button className="day-accent" onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
             {generating?"Saving & Shortening...":"Generate Delivery Link"}
           </button>
@@ -1149,7 +1203,7 @@ async function updateCustomerInfo() {
         <div style={{display:"flex",gap:8}}>
           <input value={search} onChange={e=>{setSearch(e.target.value); setPage(1);}}
             placeholder="Search name, email or phone..." style={{flex:1,fontSize:12}}/>
-          <button onClick={()=>{setEditing("new");setForm({name:"",email:"",phone:""}); }}
+          <button className="day-accent" onClick={()=>{setEditing("new");setForm({name:"",email:"",phone:""}); }}
             style={{...css.btn("blue"),padding:"11px 14px",whiteSpace:"nowrap"}}>+ Add</button>
         </div>
 
@@ -1218,7 +1272,7 @@ async function updateCustomerInfo() {
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                     <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontStyle:"italic",
                       color:selected?.id===c.id?"var(--blue-l)":"var(--white)"}}>{c.name}</span>
-                    {c.totalOrders>0&&<span style={{fontSize:9,background:"var(--ocean)",color:"var(--white)",
+                    {c.totalOrders>0&&<span className="day-accent" style={{fontSize:9,background:"var(--ocean)",color:"var(--white)",
                       padding:"2px 8px",borderRadius:10,fontWeight:700}}>{c.totalOrders}×</span>}
                   </div>
                   <div style={{fontSize:11,color:"var(--muted)",marginTop:3}}>
@@ -1339,6 +1393,7 @@ async function updateCustomerInfo() {
 
 function App() {
   const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
+  const [theme, setTheme]         = useState(localStorage.getItem("saujana-theme") || "night");
   const [tab, setTab]             = useState("dispatch");
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders]       = useState([]);
@@ -1347,34 +1402,47 @@ function App() {
   const [prefill, setPrefill]     = useState(null);
   const [loadError, setLoadError] = useState("");
 
+  useEffect(() => {
+    document.body.setAttribute("data-theme", theme === "day" ? "light" : "dark");
+    localStorage.setItem("saujana-theme", theme);
+  }, [theme]);
+
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  async function loadSheetData() {
+    const [c, o] = await Promise.all([
+      apiCall("getCustomers"),
+      apiCall("getOrders")
+    ]);
+
+    if (!Array.isArray(c) || !Array.isArray(o)) {
+      throw new Error(c?.error || o?.error || "Google Sheets returned an unexpected response");
+    }
+
+    return [c, o];
+  }
+
   async function load() {
     setLoading(true);
     setLoadError("");
 
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Google Sheets took too long to respond")), 25000)
-    );
-
     try {
-      const [c, o] = await Promise.race([
-        Promise.all([
-          apiCall("getCustomers"),
-          apiCall("getOrders")
-        ]),
-        timeout
-      ]);
+      let c, o;
+      try {
+        [c, o] = await loadSheetData();
+      } catch (firstErr) {
+        console.warn("LOAD RETRY:", firstErr);
+        await wait(1800);
+        [c, o] = await loadSheetData();
+      }
 
       console.log("CUSTOMERS API:", c);
-
-      if (!Array.isArray(c) || !Array.isArray(o)) {
-        throw new Error(c?.error || o?.error || "Google Sheets returned an unexpected response");
-      }
 
       setCustomers(c);
       setOrders(o);
     } catch (err) {
       console.error("LOAD ERROR:", err);
-      setLoadError("Could not load Google Sheets. Refresh after checking the latest Apps Script deployment.");
+      setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then tap Refresh.`);
     } finally {
       setLoading(false);
     }
@@ -1437,6 +1505,12 @@ function App() {
             </div>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               {syncing&&<span style={{fontSize:9,color:"var(--muted)",letterSpacing:"0.2em",textTransform:"uppercase"}}>Syncing...</span>}
+              <button
+                onClick={() => setTheme(t => t === "day" ? "night" : "day")}
+                style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9,minWidth:82}}
+              >
+                Theme: {theme === "day" ? "☀️" : "🌙"}
+              </button>
               <button onClick={load} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9}}>↻ Refresh</button>
               <span style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.2em",textTransform:"uppercase"}}>
                 {customers.length} customers · {orders.length} orders

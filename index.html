@@ -91,6 +91,18 @@ body[data-theme="light"] .scoreboard{
   border-color:#b66b16;
 }
 
+body[data-theme="light"] .readable-panel{
+  color:#111111 !important;
+}
+
+body[data-theme="light"] .readable-panel strong{
+  color:#000000 !important;
+}
+
+body[data-theme="light"] .readable-link{
+  color:#005b93 !important;
+}
+
 @keyframes logoReveal {
   0% {
     opacity: 0;
@@ -1028,7 +1040,7 @@ Saujana Film Lab Bali`;
           <>
             <div style={css.card}>
               <span style={css.secLabel}>Delivery Page Link</span>
-              <div onClick={()=>copyText(result.shortUrl,"url")} style={{background:"var(--dark)",
+              <div className="readable-link" onClick={()=>copyText(result.shortUrl,"url")} style={{background:"var(--dark)",
                 border:"1px solid var(--border)",borderRadius:2,padding:"13px 16px",
                 fontSize:12,color:"var(--blue-l)",wordBreak:"break-all",lineHeight:1.6,
                 cursor:"pointer",marginBottom:10}}>
@@ -1067,7 +1079,7 @@ Saujana Film Lab Bali`;
 </button>
               </div>
               <div style={{textAlign:"center", marginTop:12}}>
-                <a href={result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
+                <a className="readable-link" href={result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
                   Preview Delivery Page ↗
                 </a>
               </div>
@@ -1075,7 +1087,7 @@ Saujana Film Lab Bali`;
 
             <div style={css.card}>
               <span style={css.secLabel}>Email</span>
-              <div style={{fontSize:12,lineHeight:1.9,color:"var(--light)",background:"var(--dark)",
+              <div className="readable-panel" style={{fontSize:12,lineHeight:1.9,color:"var(--light)",background:"var(--dark)",
                            border:"1px solid var(--border)",borderRadius:2,padding:18,marginBottom:12}}>
                 Hi <strong style={{color:"var(--white)"}}>{result.custName}</strong>! Your scans are ready 🎞️<br/><br/>
                 <strong style={{color:"var(--white)"}}>Order Number: {result.orderNumber}</strong><br/><br/>
@@ -1086,7 +1098,7 @@ Saujana Film Lab Bali`;
                   </>
                 )}
                 Please click the link below to access your scans:<br/><br/>
-                <span style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here →</span><br/><br/>
+                <span className="readable-link" style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here →</span><br/><br/>
                 Link active for <strong style={{color:"var(--white)"}}>7 days</strong>. Quote order number when collecting negatives.<br/><br/>
                 Questions? WhatsApp us at <strong style={{color:"var(--white)"}}>+62 822 5131 8377</strong><br/><br/>
                 Kind regards,<br/>
@@ -1761,6 +1773,14 @@ function StockTracker() {
   }
 
   function setQty(catIdx, itemIdx, val) {
+    if (val === "") {
+      const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+        ...cat,
+        items: cat.items.map((item, ii) => ii !== itemIdx ? item : {...item, sold: 0})
+      });
+      setStock(updated);
+      return;
+    }
     const n = parseInt(val);
     if (isNaN(n) || n < 0) return;
     const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {

@@ -53,6 +53,44 @@ body[data-theme="light"] .stock-heading{
   color:#a8791e !important;
 }
 
+.scoreboard{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 8px;
+  border:1px solid rgba(255,140,40,0.45);
+  background:rgba(45,18,4,0.75);
+  box-shadow:inset 0 0 12px rgba(255,140,40,0.16),0 0 10px rgba(255,140,40,0.08);
+}
+
+.scoreboard-item{
+  display:flex;
+  align-items:baseline;
+  gap:5px;
+  color:#ff9f32;
+  text-shadow:0 0 7px rgba(255,140,40,0.8);
+  font-family:'Montserrat',sans-serif;
+}
+
+.scoreboard-number{
+  font-size:15px;
+  font-weight:700;
+  line-height:1;
+  letter-spacing:0.08em;
+}
+
+.scoreboard-label{
+  font-size:7px;
+  font-weight:600;
+  letter-spacing:0.22em;
+  text-transform:uppercase;
+}
+
+body[data-theme="light"] .scoreboard{
+  background:#221305;
+  border-color:#b66b16;
+}
+
 @keyframes logoReveal {
   0% {
     opacity: 0;
@@ -1519,9 +1557,16 @@ function App() {
                 Theme: {theme === "day" ? "☀️" : "🌙"}
               </button>
               <button onClick={load} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9}}>↻ Refresh</button>
-              <span style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.2em",textTransform:"uppercase"}}>
-                {customers.length} customers · {orders.length} orders
-              </span>
+              <div className="scoreboard" aria-label={`${customers.length} customers, ${orders.length} orders`}>
+                <div className="scoreboard-item">
+                  <span className="scoreboard-number">{customers.length}</span>
+                  <span className="scoreboard-label">Cust</span>
+                </div>
+                <div className="scoreboard-item">
+                  <span className="scoreboard-number">{orders.length}</span>
+                  <span className="scoreboard-label">Orders</span>
+                </div>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",marginTop:10}}>

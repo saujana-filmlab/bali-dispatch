@@ -306,6 +306,8 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [selCust, setSelCust]     = useState(null);
   const [custEmail, setCustEmail] = useState("");
   const [custPhone, setCustPhone] = useState("");
+  const [deliveryName, setDeliveryName] = useState("");
+  const [showDeliveryName, setShowDeliveryName] = useState(false);
   const [rolls, setRolls]         = useState([""]);
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
@@ -322,6 +324,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
     if (prefill) {
       setSelCust(prefill);
       setCustInput(prefill.name || "");
+      setDeliveryName(prefill.name || "");
       setCustEmail(prefill.email || "");
       setCustPhone(prefill.phone || "");
       if (clearPrefill) clearPrefill();
@@ -362,6 +365,8 @@ const isNewCustomer =
  function clearCust() {
   setSelCust(null);
   setCustInput("");
+  setDeliveryName("");
+  setShowDeliveryName(false);
   setCustEmail("");
   setCustPhone("");
 }
@@ -371,6 +376,7 @@ function selectCust(c) {
 
   setSelCust(c);
   setCustInput(c.name);
+  setDeliveryName(c.name || "");
   setCustEmail(c.email);
   setCustPhone(c.phone || "");
   setShowDrop(false);
@@ -443,7 +449,8 @@ function addRoll() {
       return;
     }
     setCreatingFolder(true);
-    const name = selCust ? selCust.name : (custInput.trim() || "");
+    const registryName = selCust ? selCust.name : (custInput.trim() || "");
+    const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
     const res = await apiCall("createFolder", {
       orderNumber: orderNo.trim().toUpperCase(),
       customerName: name,
@@ -463,27 +470,29 @@ function addRoll() {
     if (!orderNo.trim()||!film||!driveLink.trim()) return;
     setGenerating(true);
     
-    const name = selCust ? selCust.name : (custInput.trim() || "Customer");
+    const registryName = selCust ? selCust.name : (custInput.trim() || "Customer");
+    const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
 
-const order = {
-  orderNumber: String(orderNo || "").trim().toUpperCase(),
-  customerName: name,
-  film,
-  notes: notes.trim(),
-  driveLink: driveLink.trim()
-};
+    const deliveryOrder = {
+      orderNumber: String(orderNo || "").trim().toUpperCase(),
+      customerName: name,
+      film,
+      notes: notes.trim(),
+      driveLink: driveLink.trim()
+    };
 
-const longUrl = deliveryUrl(order); 
-const saved = await apiCall("addOrder", {
-  ...order,
-  customerId: selCust?.id || ""
-});
+    const saved = await apiCall("addOrder", {
+      ...deliveryOrder,
+      customerName: registryName,
+      customerId: selCust?.id || ""
+    });
 
-onOrderSaved({ ...saved, ...order }, selCust?.id);
+    const longUrl = deliveryUrl(deliveryOrder);
+    onOrderSaved({ ...saved, ...deliveryOrder }, selCust?.id);
 
-const shortUrl = await getShortLink(longUrl, order.orderNumber);
+    const shortUrl = await getShortLink(longUrl, deliveryOrder.orderNumber);
     
-    setResult({url: longUrl, shortUrl, custName:name, orderNumber:order.orderNumber, film, notes:order.notes});
+    setResult({url: longUrl, shortUrl, custName:name, orderNumber:deliveryOrder.orderNumber, film, notes:deliveryOrder.notes});
     setCopied({}); setGenerating(false);
     showToast("Order saved and link generated ✓");
   }
@@ -584,10 +593,12 @@ Saujana Film Lab Bali`;
     // 2. Explicitly sanitize all data before setting state
     // We use (val || "") to ensure React always gets a string, never undefined
     setOrderNo(String(o.orderNumber || ""));
-setCustInput(o.customerName || "");
-setCustEmail(customer ? (customer.email || "") : "");
-setCustPhone(customer ? (customer.phone || "") : "");
-setSelCust(customer);
+    setCustInput(customer ? (customer.name || "") : (o.customerName || ""));
+    setDeliveryName(o.customerName || "");
+    setShowDeliveryName(!!(customer && o.customerName && o.customerName !== customer.name));
+    setCustEmail(customer ? (customer.email || "") : "");
+    setCustPhone(customer ? (customer.phone || "") : "");
+    setSelCust(customer);
     
     // Split film string safely
     const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
@@ -675,6 +686,33 @@ setSelCust(customer);
                 </div>
                 <button onClick={clearCust}
                   style={{background:"none",border:"none",color:"var(--muted)",fontSize:16}}>×</button>
+              </div>
+            )}
+          </div>
+
+          {/* Optional delivery display name */}
+          <div style={{marginBottom:18}}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!showDeliveryName && !deliveryName.trim()) {
+                  setDeliveryName(selCust ? (selCust.name || "") : custInput.trim());
+                }
+                setShowDeliveryName(v => !v);
+              }}
+              style={{...css.btn("ghost"),padding:"8px 12px",fontSize:9}}
+            >
+              {showDeliveryName ? "Hide Custom Name" : "+ Custom/Edit Delivery Name"}
+            </button>
+
+            {showDeliveryName && (
+              <div style={{marginTop:10}}>
+                <label style={css.label}>Custom/Edit Delivery Name</label>
+                <input
+                  value={deliveryName}
+                  onChange={e=>setDeliveryName(e.target.value)}
+                  placeholder={selCust ? selCust.name : "Custom name for delivery page"}
+                />
               </div>
             )}
           </div>
@@ -1307,22 +1345,40 @@ function App() {
   const [loading, setLoading]     = useState(true);
   const [syncing, setSyncing]     = useState(false);
   const [prefill, setPrefill]     = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-  setLoading(true);
+    setLoading(true);
+    setLoadError("");
 
-  const [c, o] = await Promise.all([
-    apiCall("getCustomers"),
-    apiCall("getOrders")
-  ]);
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Google Sheets took too long to respond")), 25000)
+    );
 
-  console.log("CUSTOMERS API:", c);
+    try {
+      const [c, o] = await Promise.race([
+        Promise.all([
+          apiCall("getCustomers"),
+          apiCall("getOrders")
+        ]),
+        timeout
+      ]);
 
-  setCustomers(Array.isArray(c) ? c : []);
-  setOrders(Array.isArray(o) ? o : []);
+      console.log("CUSTOMERS API:", c);
 
-  setLoading(false);
-}
+      if (!Array.isArray(c) || !Array.isArray(o)) {
+        throw new Error(c?.error || o?.error || "Google Sheets returned an unexpected response");
+      }
+
+      setCustomers(c);
+      setOrders(o);
+    } catch (err) {
+      console.error("LOAD ERROR:", err);
+      setLoadError("Could not load Google Sheets. Refresh after checking the latest Apps Script deployment.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(()=>{ if(authed) load(); },[authed]);
 
@@ -1403,6 +1459,12 @@ function App() {
 
       {/* Content */}
       <div style={{maxWidth:1100,margin:"0 auto",padding:"20px 24px"}}>
+        {loadError && (
+          <div style={{marginBottom:16,padding:"12px 14px",border:"1px solid var(--red)",background:"rgba(255,80,80,0.08)",
+                       color:"var(--light)",fontSize:11,lineHeight:1.6}}>
+            {loadError}
+          </div>
+        )}
         {loading ? (
           <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
                        textTransform:"uppercase",color:"var(--dim)"}}>

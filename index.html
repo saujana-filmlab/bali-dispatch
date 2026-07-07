@@ -45,6 +45,10 @@ body[data-theme="light"] .day-accent{
   color:#111111 !important;
 }
 
+body[data-theme="light"] .brand-logo{
+  filter:invert(1) contrast(1.15);
+}
+
 @keyframes logoReveal {
   0% {
     opacity: 0;
@@ -1393,7 +1397,7 @@ async function updateCustomerInfo() {
 
 function App() {
   const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
-  const [theme, setTheme]         = useState(localStorage.getItem("saujana-theme") || "night");
+  const [theme, setTheme]         = useState("night");
   const [tab, setTab]             = useState("dispatch");
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders]       = useState([]);
@@ -1404,7 +1408,6 @@ function App() {
 
   useEffect(() => {
     document.body.setAttribute("data-theme", theme === "day" ? "light" : "dark");
-    localStorage.setItem("saujana-theme", theme);
   }, [theme]);
 
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1498,7 +1501,7 @@ function App() {
         <div style={{maxWidth:1100,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14}}>
             <div>
-              <img src="dd-horizontal.png" alt="Darkroom Dispatch Logo" style={{height:45, objectFit:"contain", display:"block"}}/>
+              <img className="brand-logo" src="dd-horizontal.png" alt="Darkroom Dispatch Logo" style={{height:45, objectFit:"contain", display:"block"}}/>
               <div style={{fontSize:8,letterSpacing:"0.4em",textTransform:"uppercase",color:"var(--muted)",marginTop:8}}>
                 Film Lab Bali · Operations
               </div>

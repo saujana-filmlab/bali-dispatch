@@ -188,6 +188,7 @@ const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE
 const BASE_URL = "https://bali-scans.saujanalab.com";
 const PASSWORD = "8888";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
+const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
 
 function readDispatchCache() {
   try {
@@ -205,6 +206,24 @@ function writeDispatchCache(customers, orders) {
     localStorage.setItem(DATA_CACHE_KEY, JSON.stringify({
       customers,
       orders,
+      savedAt: Date.now()
+    }));
+  } catch(e) {}
+}
+
+function readStockCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(STOCK_CACHE_KEY) || "null");
+    return cached && Array.isArray(cached.stock) ? cached : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+function writeStockCache(stock) {
+  try {
+    localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
+      stock,
       savedAt: Date.now()
     }));
   } catch(e) {}
@@ -1695,8 +1714,9 @@ const DEFAULT_STOCK = [
 
 // ── STOCK TRACKER COMPONENT ───────────────────────────────
 function StockTracker() {
-  const [stock, setStock]         = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const cachedStock = readStockCache();
+  const [stock, setStock]         = useState(cachedStock?.stock || []);
+  const [loading, setLoading]     = useState(!cachedStock);
   const [saving, setSaving]       = useState(false);
   const [report, setReport]       = useState("");
   const [copied, setCopied]       = useState(false);
@@ -1736,11 +1756,13 @@ function StockTracker() {
   useEffect(() => { loadStock(); }, []);
 
   async function loadStock() {
-    setLoading(true);
+    setLoading(stock.length === 0);
     try {
       const res = await apiCall("getStock");
       if (res && Array.isArray(res) && res.length > 0) {
-        setStock(normalizeStock(res));
+        const normalized = normalizeStock(res);
+        setStock(normalized);
+        writeStockCache(normalized);
       } else {
         setStock(normalizeStock(DEFAULT_STOCK));
       }
@@ -1777,6 +1799,7 @@ function StockTracker() {
       const finalizedStock = finalizeStock(stock);
       await apiCall("saveStock", {stock: finalizedStock});
       setStock(finalizedStock);
+      writeStockCache(finalizedStock);
       showToast("Stock saved ✓");
     } catch(e) {
       showToast("Save failed");
@@ -1791,6 +1814,7 @@ function StockTracker() {
       const finalizedStock = finalizeStock(stock);
       await apiCall("saveStock", {stock: finalizedStock});
       setStock(finalizedStock);
+      writeStockCache(finalizedStock);
       setReport(reportText);
       showToast("Stock saved and report generated");
     } catch(e) {

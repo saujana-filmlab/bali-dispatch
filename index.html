@@ -250,6 +250,7 @@ const fmtDT   = ts => {
   return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}) + " · " +
          d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 };
+const cleanOrderNumber = value => String(value || "").trim().toUpperCase();
 
 const deliveryUrl = o => {
   if (!o || typeof o !== 'object') return BASE_URL;
@@ -563,7 +564,7 @@ function addRoll() {
     const registryName = selCust ? selCust.name : (custInput.trim() || "");
     const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
     const res = await apiCall("createFolder", {
-      orderNumber: orderNo.trim().toUpperCase(),
+      orderNumber: cleanOrderNumber(orderNo),
       customerName: name,
     });
     if (res && res.folderUrl) {
@@ -585,7 +586,7 @@ function addRoll() {
     const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
 
     const deliveryOrder = {
-      orderNumber: String(orderNo || "").trim().toUpperCase(),
+      orderNumber: cleanOrderNumber(orderNo),
       customerName: name,
       film,
       notes: notes.trim(),
@@ -745,7 +746,14 @@ Saujana Film Lab Bali`;
           {/* Order number */}
           <div style={{marginBottom:18}}>
             <label style={css.label}>Order Number</label>
-            <input value={orderNo} onChange={e=>setOrderNo(e.target.value)} placeholder="e.g. SB-001"/>
+            <input
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              value={orderNo}
+              onChange={e=>setOrderNo(e.target.value)}
+              placeholder="e.g. 0007777"
+            />
           </div>
 
           {/* Customer search */}

@@ -187,6 +187,28 @@ const { useState, useEffect, useRef, useCallback } = React;
 const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
 const BASE_URL = "https://bali-scans.saujanalab.com";
 const PASSWORD = "8888";
+const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
+
+function readDispatchCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(DATA_CACHE_KEY) || "null");
+    return cached && Array.isArray(cached.customers) && Array.isArray(cached.orders)
+      ? cached
+      : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+function writeDispatchCache(customers, orders) {
+  try {
+    localStorage.setItem(DATA_CACHE_KEY, JSON.stringify({
+      customers,
+      orders,
+      savedAt: Date.now()
+    }));
+  } catch(e) {}
+}
 
 async function apiCall(action, data=null) {
   try {
@@ -602,8 +624,8 @@ function addRoll() {
     const longUrl = deliveryUrl(deliveryOrder);
     onOrderSaved({ ...saved, ...deliveryOrder }, selCust?.id);
 
-    const shortUrl = await getShortLink(longUrl, deliveryOrder.orderNumber);
-    
+    const shortUrl = longUrl;
+
     setResult({url: longUrl, shortUrl, custName:name, orderNumber:deliveryOrder.orderNumber, film, notes:deliveryOrder.notes});
     setCopied({}); setGenerating(false);
     showToast("Order saved and link generated ✓");
@@ -1036,7 +1058,7 @@ Saujana Film Lab Bali`;
 
           <button className="day-accent" onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
-            {generating?"Saving & Shortening...":"Generate Delivery Link"}
+            {generating?"Saving...":"Generate Delivery Link"}
           </button>
         </div>
       </div>
@@ -1458,12 +1480,13 @@ async function updateCustomerInfo() {
 }
 
 function App() {
+  const cachedDispatch = readDispatchCache();
   const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
   const [theme, setTheme]         = useState("night");
   const [tab, setTab]             = useState("dispatch");
-  const [customers, setCustomers] = useState([]);
-  const [orders, setOrders]       = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [customers, setCustomers] = useState(cachedDispatch?.customers || []);
+  const [orders, setOrders]       = useState(cachedDispatch?.orders || []);
+  const [loading, setLoading]     = useState(!cachedDispatch);
   const [syncing, setSyncing]     = useState(false);
   const [prefill, setPrefill]     = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -1475,6 +1498,11 @@ function App() {
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   async function loadSheetData() {
+    const combined = await apiCall("getInitialData");
+    if (combined && Array.isArray(combined.customers) && Array.isArray(combined.orders)) {
+      return [combined.customers, combined.orders];
+    }
+
     const [c, o] = await Promise.all([
       apiCall("getCustomers"),
       apiCall("getOrders")
@@ -1488,7 +1516,7 @@ function App() {
   }
 
   async function load() {
-    setLoading(true);
+    setLoading(customers.length === 0 && orders.length === 0);
     setLoadError("");
 
     try {
@@ -1505,6 +1533,7 @@ function App() {
 
       setCustomers(c);
       setOrders(o);
+      writeDispatchCache(c, o);
     } catch (err) {
       console.error("LOAD ERROR:", err);
       setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then tap Refresh.`);

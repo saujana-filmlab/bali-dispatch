@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Saujana - Customer Entry</title>
+  <link rel="icon" type="image/png" href="../dd-icon.png"/>
+  <link rel="apple-touch-icon" href="../dd-icon.png"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0b0d10;
+      --panel:#111720;
+      --panel2:#151d29;
+      --border:#253448;
+      --text:#f4f6fa;
+      --soft:#c8d4e0;
+      --muted:#697b8a;
+      --dim:#354454;
+      --gold:#f4c542;
+      --gold2:#c89516;
+      --red:#e05040;
+      --green:#58d68d;
+    }
+    body[data-theme="light"]{
+      --bg:#f5f3ee;
+      --panel:#ffffff;
+      --panel2:#f0ece4;
+      --border:#d8d0c3;
+      --text:#171a20;
+      --soft:#35404a;
+      --muted:#6c756f;
+      --dim:#a99f91;
+      --gold:#f4c542;
+      --gold2:#c89516;
+      --red:#c83f32;
+      --green:#128a43;
+    }
+    body{
+      min-height:100vh;
+      background:
+        radial-gradient(circle at 20% 0%,rgba(244,197,66,0.09),transparent 32%),
+        linear-gradient(180deg,#0f141b 0%,var(--bg) 62%);
+      color:var(--text);
+      font-family:'Montserrat',sans-serif;
+      font-weight:300;
+      padding:22px;
+      transition:background .2s,color .2s;
+    }
+    body[data-theme="light"]{
+      background:
+        radial-gradient(circle at 20% 0%,rgba(244,197,66,0.18),transparent 32%),
+        linear-gradient(180deg,#ffffff 0%,var(--bg) 70%);
+    }
+    button,input{font-family:'Montserrat',sans-serif}
+    .wrap{
+      min-height:calc(100vh - 44px);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .card{
+      width:100%;
+      max-width:460px;
+      background:rgba(17,23,32,0.94);
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:28px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.35);
+    }
+    body[data-theme="light"] .card{
+      background:rgba(255,255,255,0.96);
+      box-shadow:0 18px 42px rgba(64,52,35,0.14);
+    }
+    .logo{
+      width:100%;
+      max-width:260px;
+      display:block;
+      margin:0 auto 22px;
+    }
+    body[data-theme="light"] .logo{filter:invert(1) contrast(1.15)}
+    .theme-toggle{
+      position:fixed;
+      top:18px;
+      right:18px;
+      z-index:20;
+      border:1px solid var(--border);
+      border-radius:4px;
+      background:var(--panel2);
+      color:var(--soft);
+      cursor:pointer;
+      font-size:10px;
+      font-weight:700;
+      letter-spacing:0.16em;
+      padding:9px 11px;
+      text-transform:uppercase;
+    }
+    h1{
+      font-family:'Cormorant Garamond',serif;
+      font-size:34px;
+      font-style:italic;
+      font-weight:400;
+      text-align:center;
+      margin-bottom:8px;
+    }
+    .sub{
+      color:var(--muted);
+      font-size:10px;
+      letter-spacing:0.28em;
+      line-height:1.7;
+      text-align:center;
+      text-transform:uppercase;
+      margin-bottom:26px;
+    }
+    label{
+      display:block;
+      color:var(--muted);
+      font-size:9px;
+      font-weight:600;
+      letter-spacing:0.26em;
+      text-transform:uppercase;
+      margin:0 0 8px;
+    }
+    .field{margin-bottom:18px}
+    input{
+      width:100%;
+      background:var(--bg);
+      border:1px solid var(--border);
+      border-radius:4px;
+      color:var(--text);
+      font-size:16px;
+      outline:none;
+      padding:14px 15px;
+      transition:border-color .18s, box-shadow .18s;
+    }
+    input:focus{
+      border-color:var(--gold2);
+      box-shadow:0 0 0 3px rgba(244,197,66,0.12);
+    }
+    input::placeholder{color:var(--dim)}
+    .submit{
+      width:100%;
+      border:1px solid var(--gold2);
+      border-radius:4px;
+      background:var(--gold);
+      color:#101010;
+      cursor:pointer;
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:0.18em;
+      padding:15px;
+      text-transform:uppercase;
+      transition:transform .16s, opacity .16s;
+    }
+    .submit:active{transform:translateY(1px)}
+    .submit:disabled{cursor:not-allowed;opacity:.55}
+    .msg{
+      min-height:42px;
+      margin-top:16px;
+      text-align:center;
+      font-size:13px;
+      line-height:1.6;
+    }
+    .ok{color:var(--green)}
+    .err{color:var(--red)}
+    .foot{
+      margin-top:20px;
+      color:var(--dim);
+      font-size:10px;
+      line-height:1.7;
+      text-align:center;
+    }
+    .grain-burst{
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      z-index:9999;
+    }
+    .grain-particle{
+      position:absolute;
+      left:50%;
+      top:50%;
+      width:3px;
+      height:3px;
+      border-radius:50%;
+      background:var(--gold);
+      box-shadow:0 0 8px rgba(244,197,66,0.9);
+      opacity:0;
+      animation:grainScatter 760ms cubic-bezier(.16,.9,.25,1) forwards;
+    }
+    .grain-particle:nth-child(3n){
+      background:#fff;
+      box-shadow:0 0 7px rgba(255,255,255,0.7);
+    }
+    .grain-particle:nth-child(4n){
+      width:2px;
+      height:2px;
+      background:#ff8a2a;
+    }
+    @keyframes grainScatter{
+      0%{opacity:0;transform:translate(0,0) scale(.4)}
+      12%{opacity:1}
+      100%{opacity:0;transform:translate(var(--x),var(--y)) scale(0)}
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const {useEffect, useState} = React;
+    const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
+
+    async function apiCall(action, data) {
+      try {
+        const res = await fetch(`${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`, {
+          method: "POST",
+          redirect: "follow",
+          cache: "no-store",
+          headers: {"Content-Type": "text/plain;charset=utf-8"},
+          body: JSON.stringify(data || {})
+        });
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch(e) {
+          return {error: "Unexpected Google Sheets response"};
+        }
+      } catch(e) {
+        return {error: e.toString()};
+      }
+    }
+
+    function App() {
+      const [theme, setTheme] = useState("night");
+      const [form, setForm] = useState({name:"", email:"", phone:""});
+      const [saving, setSaving] = useState(false);
+      const [message, setMessage] = useState(null);
+      const [grainBurst, setGrainBurst] = useState(0);
+
+      useEffect(() => {
+        document.body.setAttribute("data-theme", theme === "day" ? "light" : "dark");
+      }, [theme]);
+
+      const update = (field, value) => {
+        setForm(f => ({...f, [field]: value}));
+        setMessage(null);
+      };
+
+      async function submit(e) {
+        e.preventDefault();
+        const payload = {
+          name: form.name.trim(),
+          email: form.email.trim().toLowerCase(),
+          phone: form.phone.trim()
+        };
+
+        if (!payload.name || !payload.email) {
+          setMessage({type:"err", text:"Please fill in your name and email."});
+          return;
+        }
+
+        setSaving(true);
+        const result = await apiCall("addCustomer", payload);
+        setSaving(false);
+
+        if (result && result.id) {
+          setForm({name:"", email:"", phone:""});
+          setMessage({type:"ok", text:"Thank you. Your details have been saved."});
+          setGrainBurst(n => n + 1);
+        } else {
+          setMessage({type:"err", text: result?.error || "Could not save yet. Please ask our staff for help."});
+        }
+      }
+
+      return (
+        <main className="wrap">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme(t => t === "day" ? "night" : "day")}
+          >
+            Theme: {theme === "day" ? "☀️" : "🌙"}
+          </button>
+          {grainBurst > 0 && (
+            <div className="grain-burst" key={grainBurst}>
+              {Array.from({length:28}).map((_, i) => {
+                const angle = (i * 137.5) * Math.PI / 180;
+                const distance = 34 + (i % 10) * 9;
+                const x = Math.cos(angle) * distance;
+                const y = Math.sin(angle) * distance;
+                return (
+                  <span
+                    key={i}
+                    className="grain-particle"
+                    style={{
+                      "--x": `${x}px`,
+                      "--y": `${y}px`,
+                      animationDelay: `${(i % 5) * 18}ms`
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+          <form className="card" onSubmit={submit}>
+            <img className="logo" src="../dd-horizontal.png" alt="Saujana Darkroom Dispatch"/>
+            <h1>Customer Details</h1>
+            <div className="sub">Saujana Film Lab Bali</div>
+
+            <div className="field">
+              <label>Name *</label>
+              <input
+                autoFocus
+                value={form.name}
+                onChange={e=>update("name", e.target.value)}
+                placeholder="Your full name"
+                autoComplete="name"
+              />
+            </div>
+
+            <div className="field">
+              <label>Email *</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={e=>update("email", e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="field">
+              <label>WhatsApp / Phone</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={e=>update("phone", e.target.value)}
+                placeholder="+62..."
+                autoComplete="tel"
+              />
+            </div>
+
+            <button className="submit" disabled={saving}>
+              {saving ? "Saving..." : "Save Details"}
+            </button>
+
+            <div className={`msg ${message?.type || ""}`}>
+              {message?.text || ""}
+            </div>
+
+            <div className="foot">
+              This page only saves your details for lab order updates.
+            </div>
+          </form>
+        </main>
+      );
+    }
+
+    ReactDOM.render(<App/>, document.getElementById("root"));
+  </script>
+</body>
+</html>

@@ -103,6 +103,43 @@ body[data-theme="light"] .readable-link{
   color:#005b93 !important;
 }
 
+.grain-burst{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:9999;
+}
+
+.grain-particle{
+  position:absolute;
+  left:calc(100% - 210px);
+  top:58px;
+  width:3px;
+  height:3px;
+  border-radius:50%;
+  background:#f4c542;
+  box-shadow:0 0 8px rgba(244,197,66,0.9);
+  opacity:0;
+  animation:grainScatter 720ms cubic-bezier(.16,.9,.25,1) forwards;
+}
+
+.grain-particle:nth-child(3n){
+  background:#ffffff;
+  box-shadow:0 0 7px rgba(255,255,255,0.7);
+}
+
+.grain-particle:nth-child(4n){
+  width:2px;
+  height:2px;
+  background:#ff8a2a;
+}
+
+@keyframes grainScatter{
+  0%{opacity:0;transform:translate(0,0) scale(0.4);}
+  12%{opacity:1;}
+  100%{opacity:0;transform:translate(var(--x),var(--y)) scale(0);}
+}
+
 @keyframes logoReveal {
   0% {
     opacity: 0;
@@ -453,7 +490,7 @@ function LockScreen({onUnlock}) {
   </div>
 );
 }
-function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
+function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, resetSignal}) {
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
   const [selCust, setSelCust]     = useState(null);
@@ -472,6 +509,29 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill}) {
   const [toast, setToast]         = useState("");
   const [orderSearch, setOrderSearch] = useState("");
   const dropRef = useRef();
+
+  function resetOrderForm() {
+    setOrderNo("");
+    setCustInput("");
+    setSelCust(null);
+    setCustEmail("");
+    setCustPhone("");
+    setDeliveryName("");
+    setShowDeliveryName(false);
+    setRolls([""]);
+    setDriveLink("");
+    setNotes("");
+    setResult(null);
+    setGenerating(false);
+    setCreatingFolder(false);
+    setShowDrop(false);
+    setCopied({});
+    setOrderSearch("");
+  }
+
+  useEffect(() => {
+    if (resetSignal) resetOrderForm();
+  }, [resetSignal]);
 
   useEffect(() => {
     if (prefill) {
@@ -1508,6 +1568,8 @@ function App() {
   const [loading, setLoading]     = useState(!cachedDispatch);
   const [syncing, setSyncing]     = useState(false);
   const [prefill, setPrefill]     = useState(null);
+  const [newOrderSignal, setNewOrderSignal] = useState(0);
+  const [grainBurst, setGrainBurst] = useState(0);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -1555,7 +1617,7 @@ function App() {
       writeDispatchCache(c, o);
     } catch (err) {
       console.error("LOAD ERROR:", err);
-      setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then tap Refresh.`);
+      setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then reopen the app.`);
     } finally {
       setLoading(false);
     }
@@ -1601,10 +1663,38 @@ function App() {
     setPrefill(c); setTab("dispatch");
   }
 
+  function handleNewOrder() {
+    setPrefill(null);
+    setTab("dispatch");
+    setNewOrderSignal(n => n + 1);
+    setGrainBurst(n => n + 1);
+  }
+
   if (!authed) return <LockScreen onUnlock={()=>setAuthed(true)}/>;
 
   return (
     <>
+      {grainBurst > 0 && (
+        <div className="grain-burst" key={grainBurst}>
+          {Array.from({length:26}).map((_, i) => {
+            const angle = (i * 137.5) * Math.PI / 180;
+            const distance = 28 + (i % 9) * 8;
+            const x = Math.cos(angle) * distance;
+            const y = Math.sin(angle) * distance + (i % 4) * 5;
+            return (
+              <span
+                key={i}
+                className="grain-particle"
+                style={{
+                  "--x": `${x}px`,
+                  "--y": `${y}px`,
+                  animationDelay: `${(i % 5) * 18}ms`
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
       {/* Header */}
       <div style={{background:"var(--dark)",borderBottom:"1px solid var(--border)",
                    padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
@@ -1624,7 +1714,9 @@ function App() {
               >
                 Theme: {theme === "day" ? "☀️" : "🌙"}
               </button>
-              <button onClick={load} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9}}>↻ Refresh</button>
+              <button className="day-accent" onClick={handleNewOrder} style={{...css.btn("blue"),padding:"6px 12px",fontSize:9}}>
+                + New Order
+              </button>
               <div className="scoreboard" aria-label={`${customers.length} customers, ${orders.length} orders`}>
                 <div className="scoreboard-item">
                   <span className="scoreboard-number">{customers.length}</span>
@@ -1666,7 +1758,7 @@ function App() {
           </div>
         ) : tab==="dispatch" ? (
           <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
-            prefill={prefill} clearPrefill={()=>setPrefill(null)}/>
+            prefill={prefill} clearPrefill={()=>setPrefill(null)} resetSignal={newOrderSignal}/>
         ) : tab==="registry" ? (
   <Registry customers={customers} orders={orders}
     onAdd={handleAdd} onUpdate={handleUpdate} onDelete={handleDelete}

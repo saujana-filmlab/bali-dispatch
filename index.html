@@ -1600,6 +1600,7 @@ function App() {
   const [orders, setOrders]       = useState(cachedDispatch?.orders || []);
   const [loading, setLoading]     = useState(!cachedDispatch);
   const [syncing, setSyncing]     = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState("");
   const [prefill, setPrefill]     = useState(null);
   const [newOrderSignal, setNewOrderSignal] = useState(0);
   const [grainBurst, setGrainBurst] = useState(0);
@@ -1631,7 +1632,10 @@ function App() {
 
   async function load() {
     setLoading(customers.length === 0 && orders.length === 0);
+    setSyncing(true);
+    setRefreshStatus("working");
     setLoadError("");
+    let ok = false;
 
     try {
       let c, o;
@@ -1648,11 +1652,19 @@ function App() {
       setCustomers(c);
       setOrders(o);
       writeDispatchCache(c, o);
+      ok = true;
     } catch (err) {
       console.error("LOAD ERROR:", err);
       setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then reopen the app.`);
     } finally {
       setLoading(false);
+      setSyncing(false);
+      if (ok) {
+        setRefreshStatus("done");
+        setTimeout(() => setRefreshStatus(""), 1200);
+      } else {
+        setRefreshStatus("");
+      }
     }
   }
 
@@ -1750,6 +1762,9 @@ function App() {
               <button className="day-accent" onClick={handleNewOrder} style={{...css.btn("blue"),padding:"6px 12px",fontSize:9}}>
                 + New Order
               </button>
+              <button onClick={load} disabled={syncing} style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9,opacity:syncing?0.55:1}}>
+                {refreshStatus === "working" ? "Working on it..." : refreshStatus === "done" ? "All done!" : "↻ Refresh"}
+              </button>
               <div className="scoreboard" aria-label={`${customers.length} customers, ${orders.length} orders`}>
                 <div className="scoreboard-item">
                   <span className="scoreboard-number">{customers.length}</span>
@@ -1842,6 +1857,8 @@ function StockTracker() {
   const cachedStock = readStockCache();
   const [stock, setStock]         = useState(cachedStock?.stock || []);
   const [loading, setLoading]     = useState(!cachedStock);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stockRefreshStatus, setStockRefreshStatus] = useState("");
   const [saving, setSaving]       = useState(false);
   const [report, setReport]       = useState("");
   const [copied, setCopied]       = useState(false);
@@ -1882,19 +1899,30 @@ function StockTracker() {
 
   async function loadStock() {
     setLoading(stock.length === 0);
+    setRefreshing(true);
+    setStockRefreshStatus("working");
+    let ok = false;
     try {
       const res = await apiCall("getStock");
       if (res && Array.isArray(res) && res.length > 0) {
         const normalized = normalizeStock(res);
         setStock(normalized);
         writeStockCache(normalized);
+        ok = true;
       } else {
-        setStock(normalizeStock(DEFAULT_STOCK));
+        if (stock.length === 0) setStock(normalizeStock(DEFAULT_STOCK));
       }
     } catch(e) {
-      setStock(normalizeStock(DEFAULT_STOCK));
+      if (stock.length === 0) setStock(normalizeStock(DEFAULT_STOCK));
     }
     setLoading(false);
+    setRefreshing(false);
+    if (ok) {
+      setStockRefreshStatus("done");
+      setTimeout(() => setStockRefreshStatus(""), 1200);
+    } else {
+      setStockRefreshStatus("");
+    }
   }
 
   function buildReportText(sourceStock=stock) {
@@ -2094,6 +2122,10 @@ function StockTracker() {
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
+          <button onClick={loadStock} disabled={refreshing || saving}
+            style={{...css.btn("ghost"),padding:"10px 18px",opacity:(refreshing||saving)?0.5:1}}>
+            {stockRefreshStatus === "working" ? "Working on it..." : stockRefreshStatus === "done" ? "All done!" : "↻ Refresh Stock"}
+          </button>
           <button className="day-accent" onClick={finalizeAndGenerateReport} disabled={saving}
             style={{...css.btn("blue"),padding:"10px 18px",opacity:saving?0.5:1}}>
             {saving?"Saving...":"Finalize + Save Report"}

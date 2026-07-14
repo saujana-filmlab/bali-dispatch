@@ -226,6 +226,7 @@ const BASE_URL = "https://bali-scans.saujanalab.com";
 const PASSWORD = "8888";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
 const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
+const STOCK_HISTORY_CACHE_KEY = "saujana-stock-history-cache-v1";
 
 function readDispatchCache() {
   try {
@@ -263,6 +264,21 @@ function writeStockCache(stock) {
       stock,
       savedAt: Date.now()
     }));
+  } catch(e) {}
+}
+
+function readLocalStockHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem(STOCK_HISTORY_CACHE_KEY) || "[]");
+    return Array.isArray(history) ? history : [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function writeLocalStockHistory(history) {
+  try {
+    localStorage.setItem(STOCK_HISTORY_CACHE_KEY, JSON.stringify((history || []).slice(0, 30)));
   } catch(e) {}
 }
 
@@ -329,6 +345,32 @@ const fmtDT   = ts => {
          d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 };
 const cleanOrderNumber = value => String(value || "").trim().toUpperCase();
+const ORDER_NUMBER_CACHE_KEY = "saujana-order-number-cache-v1";
+
+function readOrderNumberCache() {
+  try {
+    return JSON.parse(localStorage.getItem(ORDER_NUMBER_CACHE_KEY) || "{}") || {};
+  } catch(e) {
+    return {};
+  }
+}
+
+function rememberOrderNumber(id, orderNumber) {
+  if (!id || !orderNumber) return;
+  try {
+    const cache = readOrderNumberCache();
+    cache[id] = cleanOrderNumber(orderNumber);
+    localStorage.setItem(ORDER_NUMBER_CACHE_KEY, JSON.stringify(cache));
+  } catch(e) {}
+}
+
+function restoreOrderNumbers(orders) {
+  const cache = readOrderNumberCache();
+  return (orders || []).map(order => ({
+    ...order,
+    orderNumber: cache[order.id] || cleanOrderNumber(order.orderNumber)
+  }));
+}
 
 const deliveryUrl = o => {
   if (!o || typeof o !== 'object') return BASE_URL;
@@ -696,9 +738,11 @@ function addRoll() {
 
     const saved = await apiCall("addOrder", {
       ...deliveryOrder,
+      orderNumberText: deliveryOrder.orderNumber,
       customerName: registryName,
       customerId: selCust?.id || ""
     });
+    rememberOrderNumber(saved?.id, deliveryOrder.orderNumber);
 
     const longUrl = deliveryUrl(deliveryOrder);
     onOrderSaved({ ...saved, ...deliveryOrder }, selCust?.id);
@@ -1615,7 +1659,7 @@ function App() {
   async function loadSheetData() {
     const combined = await apiCall("getInitialData");
     if (combined && Array.isArray(combined.customers) && Array.isArray(combined.orders)) {
-      return [combined.customers, combined.orders];
+      return [combined.customers, restoreOrderNumbers(combined.orders)];
     }
 
     const [c, o] = await Promise.all([
@@ -1627,7 +1671,7 @@ function App() {
       throw new Error(c?.error || o?.error || "Google Sheets returned an unexpected response");
     }
 
-    return [c, o];
+    return [c, restoreOrderNumbers(o)];
   }
 
   async function load() {
@@ -1697,6 +1741,7 @@ function App() {
   }
 
   function handleOrderSaved(saved, custId) {
+    rememberOrderNumber(saved?.id, saved?.orderNumber);
     setOrders(p=>[{...saved,createdAt:Date.now()},...p]);
     if (custId) {
       setCustomers(p=>p.map(c=>c.id===custId
@@ -1871,6 +1916,11 @@ function StockTracker() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageNew, setManageNew] = useState({category:"", name:"", qty:"0"});
   const [manageSearch, setManageSearch] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [stockHistory, setStockHistory] = useState(readLocalStockHistory());
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState("");
+  const [selectedHistory, setSelectedHistory] = useState(null);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
   const remainingQty = item => Math.max(0, (item.qty || 0) - (item.sold || 0));
@@ -1895,7 +1945,84 @@ function StockTracker() {
   }));
 
   // Load stock from Sheets
-  useEffect(() => { loadStock(); }, []);
+  useEffect(() => { loadStock(); loadStockHistory(); }, []);
+
+  function countStockItems(sourceStock=[]) {
+    return sourceStock.reduce((total, cat) => total + (cat.items || []).length, 0);
+  }
+
+  function parseHistoryStock(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    try {
+      return JSON.parse(value);
+    } catch(e) {
+      return [];
+    }
+  }
+
+  function historySummary(entry) {
+    const before = parseHistoryStock(entry.beforeStock);
+    const after = parseHistoryStock(entry.afterStock);
+    const soldCount = before.reduce((sum, cat) => sum + (cat.items || []).reduce((itemSum, item) => itemSum + (Number(item.sold) || 0), 0), 0);
+    return {
+      beforeItems: countStockItems(before),
+      afterItems: countStockItems(after),
+      soldCount
+    };
+  }
+
+  async function loadStockHistory() {
+    setHistoryLoading(true);
+    const localHistory = readLocalStockHistory();
+    try {
+      const res = await apiCall("getStockHistory");
+      if (Array.isArray(res)) {
+        const seen = {};
+        const merged = [...res, ...localHistory].filter(entry => {
+          const key = entry.id || entry.timestamp;
+          if (!key || seen[key]) return false;
+          seen[key] = true;
+          return true;
+        }).slice(0, 30);
+        setStockHistory(merged);
+        writeLocalStockHistory(merged);
+        setHistoryNotice("");
+      } else {
+        setStockHistory(localHistory);
+        setHistoryNotice(localHistory.length ? "Showing local history. Deploy Apps Script history to sync across devices." : "No history found yet. Finalize stock once after this update to create the first record.");
+      }
+    } catch(e) {
+      setStockHistory(localHistory);
+      setHistoryNotice(localHistory.length ? "Showing local history. Deploy Apps Script history to sync across devices." : "No history found yet. Finalize stock once after this update to create the first record.");
+    }
+    setHistoryLoading(false);
+  }
+
+  async function recordStockHistory(beforeStock, afterStock, reportText) {
+    const localEntry = {
+      id: "local_sh_" + Date.now(),
+      timestamp: new Date().toISOString(),
+      action: "finalize",
+      beforeStock,
+      afterStock,
+      report: reportText
+    };
+    const nextLocalHistory = [localEntry, ...readLocalStockHistory()].slice(0, 30);
+    writeLocalStockHistory(nextLocalHistory);
+    setStockHistory(nextLocalHistory);
+    setHistoryNotice("Saved to local history. Syncs to Sheets when Apps Script history is deployed.");
+
+    try {
+      await apiCall("recordStockHistory", {
+        action: "finalize",
+        beforeStock,
+        afterStock,
+        report: reportText
+      });
+      await loadStockHistory();
+    } catch(e) {}
+  }
 
   async function loadStock() {
     setLoading(stock.length === 0);
@@ -1965,6 +2092,7 @@ function StockTracker() {
     try {
       const reportText = buildReportText(stock);
       const finalizedStock = finalizeStock(stock);
+      await recordStockHistory(stock, finalizedStock, reportText);
       await apiCall("saveStock", {stock: finalizedStock});
       setStock(finalizedStock);
       writeStockCache(finalizedStock);
@@ -2236,6 +2364,113 @@ function StockTracker() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Stock history */}
+      <div style={{...css.card,marginBottom:16,padding:0,overflow:"hidden"}}>
+        <button onClick={()=>{setHistoryOpen(v=>!v); if (!historyOpen) loadStockHistory();}}
+          style={{width:"100%",background:"var(--card2)",border:"none",borderBottom:historyOpen?"1px solid var(--border)":"none",
+                  padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.3em",textTransform:"uppercase",color:"var(--blue-l)"}}>
+            Stock History
+          </span>
+          <span style={{fontSize:18,color:"var(--muted)",lineHeight:1}}>{historyOpen?"-":"+"}</span>
+        </button>
+
+        {historyOpen && (
+          <div style={{padding:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10}}>
+              <div style={{fontSize:11,color:"var(--muted)",lineHeight:1.6}}>
+                Recent finalize snapshots, useful when stock was saved before everything was entered.
+              </div>
+              <button onClick={loadStockHistory} disabled={historyLoading}
+                style={{...css.btn("ghost"),padding:"8px 12px",fontSize:9,whiteSpace:"nowrap"}}>
+                {historyLoading ? "Working on it..." : "↻ Refresh"}
+              </button>
+            </div>
+            {historyNotice && (
+              <div style={{fontSize:11,color:"var(--gold-l)",lineHeight:1.6,marginBottom:12,
+                           background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2,padding:"10px 12px"}}>
+                {historyNotice}
+              </div>
+            )}
+
+            {stockHistory.length===0 ? (
+              <div style={{textAlign:"center",padding:"24px 16px",fontSize:12,color:"var(--dim)"}}>
+                No stock history yet
+              </div>
+            ) : (
+              <div style={{display:"grid",gridTemplateColumns:selectedHistory?"260px 1fr":"1fr",gap:12}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {stockHistory.slice(0,12).map(entry => {
+                    const summary = historySummary(entry);
+                    return (
+                      <button key={entry.id || entry.timestamp} onClick={()=>setSelectedHistory(entry)}
+                        style={{background:selectedHistory==entry?"var(--blue-gl)":"var(--dark)",
+                                border:"1px solid var(--border)",borderLeft:"3px solid var(--gold)",
+                                borderRadius:2,padding:"10px 12px",textAlign:"left",cursor:"pointer"}}>
+                        <div style={{fontSize:12,color:"var(--white)",fontWeight:600}}>
+                          {fmtDT(entry.timestamp)}
+                        </div>
+                        <div style={{fontSize:10,color:"var(--muted)",marginTop:4,lineHeight:1.5}}>
+                          Sold entered: {summary.soldCount} · Items: {summary.afterItems}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedHistory && (
+                  <div style={{background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2,padding:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",marginBottom:12}}>
+                      <div>
+                        <div style={{fontSize:12,color:"var(--white)",fontWeight:600}}>{fmtDT(selectedHistory.timestamp)}</div>
+                        <div style={{fontSize:10,color:"var(--muted)",marginTop:3}}>Finalize snapshot</div>
+                      </div>
+                      <button onClick={()=>setSelectedHistory(null)}
+                        style={{background:"none",border:"1px solid var(--border)",color:"var(--muted)",padding:"4px 8px",borderRadius:2}}>×</button>
+                    </div>
+
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                      {[
+                        {label:"Before Save", data:parseHistoryStock(selectedHistory.beforeStock)},
+                        {label:"After Save", data:parseHistoryStock(selectedHistory.afterStock)}
+                      ].map(block => (
+                        <div key={block.label}>
+                          <div style={{fontSize:9,letterSpacing:"0.22em",textTransform:"uppercase",color:"var(--muted)",marginBottom:8}}>
+                            {block.label}
+                          </div>
+                          <div style={{maxHeight:220,overflowY:"auto",border:"1px solid var(--border)",borderRadius:2,padding:10}}>
+                            {block.data.map(cat => (
+                              <div key={cat.category} style={{marginBottom:10}}>
+                                <div style={{fontSize:10,color:"var(--blue-l)",fontWeight:700,letterSpacing:"0.16em",textTransform:"uppercase",marginBottom:5}}>
+                                  {cat.category}
+                                </div>
+                                {(cat.items || []).filter(item=>item.visible!==false).map(item => (
+                                  <div key={item.name} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,color:"var(--light)",lineHeight:1.7}}>
+                                    <span>{item.name}</span>
+                                    <span>{item.qty || 0}{item.sold ? ` / sold ${item.sold}` : ""}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {selectedHistory.report && (
+                      <pre style={{fontSize:12,lineHeight:1.7,color:"var(--light)",whiteSpace:"pre-wrap",
+                                   background:"var(--card)",border:"1px solid var(--border)",borderRadius:2,padding:12}}>
+                        {selectedHistory.report}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Manage items */}

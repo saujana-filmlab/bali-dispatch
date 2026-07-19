@@ -214,16 +214,31 @@ input,textarea{
     input::placeholder,textarea::placeholder{color:var(--dim);}
     button{cursor:pointer;font-family:'Montserrat',sans-serif;}
     a{text-decoration:none;}
+
+    .guidelines-toggle{
+      width:100%;display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;
+      padding:10px 0;background:none;border:0;border-bottom:1px solid var(--border);color:var(--muted);
+      font-size:9px;letter-spacing:.2em;text-transform:uppercase;text-align:left;
+    }
+    .guidelines-toggle span{color:var(--gold-l);font-size:15px;line-height:1;}
+    .dispatch-flow{
+      display:grid;gap:8px;margin:-2px 0 18px;padding:12px;background:var(--dark);border:1px solid var(--border);
+      color:var(--muted);font-size:9px;line-height:1.55;
+    }
+    .dispatch-flow-step{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;}
+    .dispatch-flow-step strong{color:var(--gold-l);font-size:9px;}
   </style>
 </head>
 <body>
 <div id="root"></div>
+<script type="text/babel" src="contact-sheet-generator.jsx"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
 const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
 const BASE_URL = "https://bali-scans.saujanalab.com";
-const PASSWORD = "8888";
+const AUTH_SESSION_KEY = "saujana-auth";
+const ADMIN_KEY_SESSION_KEY = "saujana-contact-sheets-admin-key";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
 const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
 const STOCK_HISTORY_CACHE_KEY = "saujana-stock-history-cache-v1";
@@ -284,6 +299,13 @@ function writeLocalStockHistory(history) {
 
 async function apiCall(action, data=null) {
   try {
+    if (!API) {
+      return {
+        success: true,
+        id: `beta-${action}-${Date.now()}`,
+        ...(data || {})
+      };
+    }
     const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
     const readJson = async response => {
       const text = await response.text();
@@ -337,6 +359,49 @@ async function apiCall(action, data=null) {
     return {error: e.toString()}; 
   }
 }
+
+function getContactSheetAdminKey() {
+  return sessionStorage.getItem(ADMIN_KEY_SESSION_KEY) || "";
+}
+
+function normalizeScanStyle(value) {
+  return String(value || "classic").trim().toLowerCase().replace(/\s+/g,"-");
+}
+
+function normalizeFrameFormat(value) {
+  return String(value || "full").toLowerCase() === "half" ? "half-frame" : "full-frame";
+}
+
+async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}) {
+  const blob = variant === "story" ? sheet.storyBlob : sheet.deliveryBlob;
+  if (!(blob instanceof Blob)) throw new Error(`Missing ${variant} JPEG for ${sheet.filmName}`);
+
+  const ticket = await apiCall("createContactSheetUploadTicket", {
+    orderNumber,
+    uploadNonce,
+    rollIndex:sheet.rollIndex,
+    variant
+  });
+  if (!ticket?.uploadUrl || !ticket?.fileUrl) {
+    throw new Error(ticket?.error || `Could not prepare the ${variant} upload`);
+  }
+
+  const response = await fetch(ticket.uploadUrl, {
+    method:"PUT",
+    headers:{"Content-Type":"image/jpeg"},
+    body:blob
+  });
+  if (!response.ok) {
+    let message = `Upload failed (${response.status})`;
+    try {
+      const result = await response.json();
+      if (result?.error) message = result.error;
+    } catch(e) {}
+    throw new Error(message);
+  }
+  return ticket.fileUrl;
+}
+
 const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "-";
 const fmtDT   = ts => {
   if (!ts) return "-";
@@ -381,6 +446,92 @@ const deliveryUrl = o => {
   // Notes excluded from URL — fetched from Sheets by delivery page
   return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}`;
 };
+
+const escapePreviewHtml = value => String(value || "")
+  .replace(/&/g,"&amp;")
+  .replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;")
+  .replace(/'/g,"&#039;");
+
+const blobToDataUrl = blob => new Promise((resolve,reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(new Error("Could not prepare the delivery preview."));
+  reader.readAsDataURL(blob);
+});
+
+async function createLocalDeliveryPreview({customerName,orderNumber,driveLink,film,notes,contactSheets}) {
+  const prepared = [];
+  for (const sheet of contactSheets || []) {
+    const imageUrl = sheet.deliveryBlob
+      ? await blobToDataUrl(sheet.deliveryBlob)
+      : (sheet.deliveryUrl || sheet.deliveryPreviewUrl || "");
+    const storyUrl = sheet.storyBlob
+      ? await blobToDataUrl(sheet.storyBlob)
+      : (sheet.storyUrl || sheet.storyPreviewUrl || "");
+    if (imageUrl) prepared.push({...sheet,imageUrl,storyUrl});
+  }
+
+  let brandLogo = "";
+  try {
+    const logoResponse = await fetch("saujana-white.png");
+    if (logoResponse.ok) brandLogo = await blobToDataUrl(await logoResponse.blob());
+  } catch(error) {}
+
+  const assetUrl = fileName => new URL(fileName, window.location.href).href;
+  const contactDownloadIcon = escapePreviewHtml(assetUrl("icon-contact-download.png"));
+  const contactShareIcon = escapePreviewHtml(assetUrl("icon-contact-share.png"));
+  const fullDownloadIcon = escapePreviewHtml(assetUrl("icon-full-download.png"));
+
+  const safeFileName = value => String(value || "saujana-roll").replace(/[<>:"/\\|?*]/g,"-");
+  const slides = prepared.map((sheet,index) => {
+    const baseName = safeFileName(sheet.filmName);
+    return `
+    <article class="slide${index===0?" active":""}">
+      <img src="${sheet.imageUrl}" alt="${escapePreviewHtml(sheet.filmName)} contact sheet">
+      <div class="caption"><strong>${escapePreviewHtml(sheet.filmName)}</strong><span>${Number(sheet.frameCount)||0} frames</span></div>
+      <div class="sheet-actions">
+        <a class="sheet-button" href="${sheet.imageUrl}" download="${escapePreviewHtml(baseName)}_contact-4x3.jpg"><img class="button-image-icon button-image-icon--light" src="${contactDownloadIcon}" alt="" aria-hidden="true"><span>Download contact sheet</span></a>
+        ${sheet.storyUrl?`<button class="sheet-button share-sheet" type="button" data-story="${sheet.storyUrl}" data-name="${escapePreviewHtml(baseName)}_contact-story.jpg" data-film="${escapePreviewHtml(sheet.filmName)}"><img class="button-image-icon button-image-icon--light" src="${contactShareIcon}" alt="" aria-hidden="true"><span>Share contact sheet</span></button>`:""}
+      </div>
+    </article>`;
+  }).join("");
+  const dots = prepared.map((_,index)=>`<button class="dot${index===0?" active":""}" data-index="${index}" aria-label="Show roll ${index+1}"></button>`).join("");
+  const carousel = prepared.length ? `
+    <div class="contact-preview">
+      <section class="carousel">
+      ${slides}
+      ${prepared.length>1?`<button class="nav prev" aria-label="Previous roll">‹</button><button class="nav next" aria-label="Next roll">›</button><div class="dots">${dots}</div>`:""}
+      </section>
+    </div>` : "";
+  const personalNote = notes ? `<span class="personal-note">${escapePreviewHtml(notes)}<br><br></span>` : "";
+  const logoMarkup = brandLogo
+    ? `<img src="${brandLogo}" alt="Saujana Film Lab Bali">`
+    : `<div class="logo-fallback">Saujana <span>FILM LAB BALI</span></div>`;
+  const sprocketHoles = Array.from({length:13},()=>`<span class="sprocket-hole"></span>`).join("");
+
+  const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your Scans are Ready — Saujana Film Lab Bali</title><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet"><style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}:root{--black:#0a0a0a;--off-black:#111;--dark:#1a1a1a;--mid:#2e2e2e;--dim:#555;--muted:#888;--light:#c8c8c8;--off-white:#eeece8;--white:#fafaf8}html{scroll-behavior:smooth}body{background:var(--black);color:var(--off-white);font-family:'Montserrat',sans-serif;font-weight:300;min-height:100vh;overflow-x:hidden}body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");opacity:.045;pointer-events:none;z-index:100}.sprocket-strip{width:100%;height:36px;background:var(--off-black);border-bottom:1px solid #222;display:flex;align-items:center;padding:0 24px;overflow:hidden;position:relative}.sprocket-strip::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,#333 20%,#333 80%,transparent)}.sprocket-hole{width:18px;height:22px;border:1.5px solid #333;border-radius:3px;margin-right:28px;flex-shrink:0;opacity:.6}.frame-counter{position:absolute;right:24px;font-size:9px;letter-spacing:.2em;color:var(--dim)}.page{max-width:680px;margin:0 auto;padding:0 32px 80px}.header{padding:64px 0 48px;text-align:center;opacity:0;animation:fadeUp 1s ease .1s forwards}.logo-wrap{display:inline-block;margin-bottom:32px}.logo-wrap img{width:220px;max-height:100px;object-fit:contain;opacity:.95}.logo-fallback{font:italic 300 36px 'Cormorant Garamond',serif;color:var(--white)}.logo-fallback span{font:400 12px 'Montserrat',sans-serif;letter-spacing:.3em;color:var(--muted);vertical-align:middle}.tagline{font-size:10px;letter-spacing:.35em;color:var(--muted);text-transform:uppercase;margin-top:4px}.ready-card{text-align:center;padding:52px 40px;background:var(--off-black);border:1px solid #222;border-radius:2px;position:relative;overflow:hidden;opacity:0;animation:fadeUp 1s ease .4s forwards}.ready-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,#444,transparent)}.ready-eyebrow{font-size:9px;letter-spacing:.4em;text-transform:uppercase;color:var(--muted);margin-bottom:20px}.ready-headline,.ready-name{font-family:'Cormorant Garamond',serif;font-size:clamp(32px,6vw,48px);color:var(--white);line-height:1.15}.ready-headline{font-weight:300;font-style:italic;margin-bottom:8px}.ready-name{font-weight:400}.ready-sub{margin-top:20px;font-size:11px;letter-spacing:.15em;color:var(--muted)}.contact-preview{margin-top:36px;padding-top:30px;border-top:1px solid #242424}.contact-eyebrow{font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:var(--dim);margin-bottom:16px}.carousel{position:relative;background:#090909;border:1px solid #242424;padding:8px;text-align:left}.slide{display:none}.slide.active{display:block}.slide img{display:block;width:100%;height:auto}.caption{display:flex;justify-content:space-between;gap:16px;padding:11px 3px 3px;color:var(--muted);font-size:9px;letter-spacing:.12em;text-transform:uppercase}.caption strong{color:var(--light);font-weight:500}.sheet-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.sheet-button{display:block;padding:11px 9px;background:#161616;border:1px solid #2a2a2a;color:var(--light);font:500 8px 'Montserrat',sans-serif;letter-spacing:.14em;text-transform:uppercase;text-align:center;text-decoration:none;transition:.25s}.sheet-button:hover{border-color:#444;color:var(--white)}.nav{position:absolute;top:42%;transform:translateY(-50%);width:34px;height:46px;border:1px solid #444;background:rgba(10,10,10,.82);color:var(--white);font-size:24px}.prev{left:14px}.next{right:14px}.dots{display:flex;justify-content:center;gap:7px;margin-top:12px}.dot{width:6px;height:6px;border:0;border-radius:50%;background:#444;padding:0}.dot.active{background:var(--off-white)}.download-wrap{margin-top:36px;display:flex;justify-content:center}.btn-download{display:inline-flex;align-items:center;gap:12px;padding:16px 40px;background:var(--off-white);color:var(--black);text-decoration:none;font-size:11px;font-weight:500;letter-spacing:.25em;text-transform:uppercase;border-radius:1px;transition:.3s;position:relative;overflow:hidden}.btn-download::before{content:'';position:absolute;inset:0;background:var(--white);transform:scaleX(0);transform-origin:left;transition:transform .3s}.btn-download:hover::before{transform:scaleX(1)}.btn-download span{position:relative;z-index:1}.btn-download:hover{letter-spacing:.3em}.notice{margin-top:24px;display:flex;align-items:flex-start;gap:12px;background:#161616;border:1px solid #222;border-left:2px solid #444;padding:16px 20px;text-align:left;opacity:0;animation:fadeUp 1s ease .55s forwards}.notice-icon{font-size:14px;margin-top:1px;flex-shrink:0}.notice p{font-size:11.5px;line-height:1.7;color:var(--light)}.notice strong{color:var(--off-white);font-weight:500}.info-section,.actions{margin-top:48px;opacity:0;animation:fadeUp 1s ease .65s forwards}.actions{animation-delay:.75s}.info-label{font-size:9px;letter-spacing:.35em;text-transform:uppercase;color:var(--dim);margin-bottom:20px;display:flex;align-items:center;gap:12px}.info-label::after{content:'';flex:1;height:1px;background:#222}.message-block{background:var(--off-black);border:1px solid #1e1e1e;padding:32px 36px;font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:300;line-height:1.8;color:var(--light);font-style:italic}.message-block strong{font-style:normal;font-weight:400;color:var(--off-white)}.personal-note{display:block;color:var(--off-white);white-space:pre-line}.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.action-card{display:flex;align-items:center;gap:14px;padding:20px 22px;background:var(--off-black);border:1px solid #1e1e1e;text-decoration:none;color:var(--light);transition:.25s;position:relative;overflow:hidden}.action-card::before{content:'';position:absolute;inset:0;background:#1a1a1a;transform:scaleY(0);transform-origin:bottom;transition:.25s}.action-card:hover::before{transform:scaleY(1)}.action-card:hover{border-color:#333;color:var(--off-white)}.action-card>*{position:relative;z-index:1}.action-icon{width:36px;height:36px;background:#222;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}.action-title{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--off-white);margin-bottom:3px}.action-sub{font-size:10.5px;color:var(--muted);letter-spacing:.03em}.footer{margin-top:72px;text-align:center;opacity:0;animation:fadeUp 1s ease .85s forwards}.footer-text{font-size:10px;letter-spacing:.2em;color:var(--dim);line-height:2;text-transform:uppercase}.sprocket-strip-bottom{margin-top:56px}@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@media(max-width:520px){.page{padding:0 20px 64px}.header{padding:50px 0 38px}.ready-card{padding:40px 24px}.message-block{padding:24px;font-size:16px}.action-grid,.sheet-actions{grid-template-columns:1fr}.btn-download{width:100%;justify-content:center;padding-inline:18px}.caption{display:block}.caption span{display:block;margin-top:5px}}
+    .logo-wrap img{width:260px;max-height:118px}.contact-preview{padding-top:18px}.btn-download{width:100%;justify-content:center;background:#d19a2a;color:#0a0a0a;box-shadow:0 8px 22px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.24)}.btn-download::before{background:#e0aa3e}.btn-download:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,0,0,.3),inset 0 1px rgba(255,255,255,.28)}.btn-download:active{transform:translateY(0)}.sheet-button{display:flex;align-items:center;justify-content:center;gap:11px;min-height:50px;position:relative;isolation:isolate;overflow:hidden;background:linear-gradient(180deg,#1b1b1b,#131313);border-color:#303030;box-shadow:inset 0 1px rgba(255,255,255,.035),0 5px 14px rgba(0,0,0,.18);transition:transform .22s ease,border-color .22s ease,color .22s ease,box-shadow .22s ease}.sheet-button>*{position:relative;z-index:1}.sheet-button::after{content:'';position:absolute;z-index:0;inset:-2px;background:linear-gradient(105deg,transparent 25%,rgba(255,255,255,.09) 48%,transparent 72%);transform:translateX(-120%);transition:transform .6s ease}.sheet-button:hover{transform:translateY(-2px);border-color:#7a5a24;color:var(--white);box-shadow:inset 0 1px rgba(255,255,255,.06),0 9px 20px rgba(0,0,0,.28)}.sheet-button:hover::after{transform:translateX(120%)}.sheet-button:active{transform:translateY(0)}.sheet-button:focus-visible,.btn-download:focus-visible{outline:2px solid #d19a2a;outline-offset:3px}.button-icon{display:block;width:20px;height:20px;flex:0 0 20px;position:relative;color:var(--off-white);transition:transform .22s ease}.sheet-button:hover .button-icon,.btn-download:hover .button-icon{transform:scale(1.08)}.icon-download::before{content:'';position:absolute;left:9px;top:1px;width:2px;height:11px;background:currentColor;border-radius:2px}.icon-download::after{content:'';position:absolute;left:5px;top:6px;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg)}.icon-download i{position:absolute;left:3px;bottom:0;width:14px;height:5px;border:2px solid currentColor;border-top:0;border-radius:0 0 2px 2px}.icon-share::before,.icon-share::after{content:'';position:absolute;left:5px;width:10px;height:1.5px;background:currentColor;transform-origin:left center}.icon-share::before{top:7px;transform:rotate(-28deg)}.icon-share::after{top:12px;transform:rotate(28deg)}.icon-share i,.icon-share b,.icon-share em{position:absolute;width:6px;height:6px;border:1.7px solid currentColor;border-radius:50%;background:#171717}.icon-share i{left:0;top:7px}.icon-share b{right:0;top:1px}.icon-share em{right:0;bottom:1px}.primary-download-icon{color:#0a0a0a}@media(prefers-reduced-motion:reduce){.sheet-button,.sheet-button::after,.button-icon,.btn-download{transition:none}}
+    .nav{width:42px;height:42px;border-radius:50%;border-color:#505050;background:rgba(12,12,12,.88);font-family:'Cormorant Garamond',serif;line-height:1;transition:background .2s ease,border-color .2s ease,color .2s ease,transform .2s ease,box-shadow .2s ease}.nav:hover{background:#d19a2a;border-color:#d19a2a;color:#0a0a0a;transform:translateY(-50%) scale(1.06);box-shadow:0 6px 20px rgba(0,0,0,.35)}.nav:active{transform:translateY(-50%) scale(.96)}.nav:focus-visible,.dot:focus-visible{outline:2px solid #d19a2a;outline-offset:3px}.dot{cursor:pointer;transition:transform .2s ease,background .2s ease}.dot:hover{background:#d19a2a;transform:scale(1.35)}
+    .logo-wrap img{height:auto;max-height:none;object-fit:contain}
+    @media(min-width:761px){.page{max-width:1040px}.header{max-width:760px;margin-inline:auto}.ready-card{padding:58px 52px}.notice{margin:24px 0 0}.info-section,.actions,.footer{max-width:none;margin-left:0;margin-right:0}}
+  </style></head><body><div class="sprocket-strip">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div><main class="page"><header class="header"><div class="logo-wrap">${logoMarkup}</div><p class="tagline">Develop · Scan · Film Supply · Cameras</p></header><section class="ready-card"><p class="ready-eyebrow">Order complete · ${escapePreviewHtml(orderNumber)}</p><h1 class="ready-headline">Your scans are ready,</h1><p class="ready-name">${escapePreviewHtml(customerName)}</p><p class="ready-sub">${escapePreviewHtml(film)}</p>${carousel}<div class="download-wrap"><a href="${escapePreviewHtml(driveLink)}" class="btn-download" target="_blank" rel="noopener"><span class="button-icon icon-download primary-download-icon" aria-hidden="true"><i></i></span><span>Download full-resolution scans</span></a></div></section><div class="notice"><span class="notice-icon">⏳</span><p><strong>Your download link is active for 7 days.</strong> Please save your scans before then. Need us to hold onto your negatives? We store them for up to <strong>1 month upon request</strong> — just let us know.</p></div><section class="info-section"><p class="info-label">A note from us</p><div class="message-block">${personalNote}Film has this funny way of making ordinary moments feel eternal. We take that seriously around here, even if we don't always look like it. <strong>Hope your scans are everything you were waiting for.</strong><br><br>Any questions about your order? We're always here.</div></section><section class="actions"><p class="info-label">Stay in touch</p><div class="action-grid"><a href="https://g.page/r/CarOb39L8uCJEBM/review" target="_blank" rel="noopener" class="action-card"><div class="action-icon">⭐</div><div><p class="action-title">Leave a Review</p><p class="action-sub">Happy with your scans?</p></div></a><a href="https://www.instagram.com/saujanabali" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📷</div><div><p class="action-title">Tag Us</p><p class="action-sub">@saujanabali</p></div></a><a href="http://wa.me/6282251318377" target="_blank" rel="noopener" class="action-card"><div class="action-icon">💬</div><div><p class="action-title">WhatsApp Us</p><p class="action-sub">Questions about your order</p></div></a><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📍</div><div><p class="action-title">Find Us</p><p class="action-sub">Jl. Batu Bolong, Canggu</p></div></a></div></section><footer class="footer"><p class="footer-text">Saujana Film Lab · Bali, Indonesia<br>Develop · Scan · Film Supply · Cameras<br><br><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:none;letter-spacing:.15em;font-size:9px">Jl. Pantai Batu Bolong No.25, Canggu, Bali 80361</a></p></footer><div class="sprocket-strip sprocket-strip-bottom">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div></main><script>
+    (()=>{const slides=[...document.querySelectorAll('.slide')],dots=[...document.querySelectorAll('.dot')];let current=0;const show=i=>{if(!slides.length)return;current=(i+slides.length)%slides.length;slides.forEach((el,n)=>el.classList.toggle('active',n===current));dots.forEach((el,n)=>el.classList.toggle('active',n===current));};document.querySelector('.prev')?.addEventListener('click',()=>show(current-1));document.querySelector('.next')?.addEventListener('click',()=>show(current+1));dots.forEach(dot=>dot.addEventListener('click',()=>show(Number(dot.dataset.index))));document.querySelectorAll('.share-sheet').forEach(button=>button.addEventListener('click',async()=>{try{const response=await fetch(button.dataset.story);const blob=await response.blob();const file=new File([blob],button.dataset.name,{type:'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:button.dataset.film+' contact sheet'});}else{const link=document.createElement('a');link.href=button.dataset.story;link.download=button.dataset.name;link.click();}}catch(error){const link=document.createElement('a');link.href=button.dataset.story;link.download=button.dataset.name;link.click();}}));})();
+  <\/script></body></html>`;
+  const iconCss = `<style>
+    .slide img.button-image-icon,.btn-download img.button-image-icon{display:block;width:24px;height:24px;flex:0 0 24px;object-fit:contain;position:relative;z-index:1;transition:transform .22s ease}
+    .button-image-icon--light{filter:invert(1)}
+    .button-image-icon--dark{filter:none}
+    .sheet-button:hover .button-image-icon,.btn-download:hover .button-image-icon{transform:scale(1.08)}
+    @media(prefers-reduced-motion:reduce){.button-image-icon{transition:none}}
+  </style>`;
+  const finalizedPage = page
+    .replace("</head>", `${iconCss}</head>`)
+    .replace('<span class="button-icon icon-download primary-download-icon" aria-hidden="true"><i></i></span>', `<img class="button-image-icon button-image-icon--dark" src="${fullDownloadIcon}" alt="" aria-hidden="true">`);
+  return URL.createObjectURL(new Blob([finalizedPage],{type:"text/html"}));
+}
 
 async function getShortLink(longUrl) {
   // is.gd supports CORS natively — no proxy needed, fast and reliable
@@ -429,10 +580,24 @@ function Toast({msg}) {
 function LockScreen({onUnlock}) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
+  const [checking, setChecking] = useState(false);
 
-  function check() {
-    if (pw === PASSWORD) { sessionStorage.setItem("saujana-auth","1"); onUnlock(); }
-    else { setErr("Incorrect password"); setPw(""); setTimeout(()=>setErr(""),2500); }
+  async function check() {
+    if (!pw || checking) return;
+    setChecking(true);
+    setErr("");
+    const result = await apiCall("verifyContactSheetAdmin", {adminKey:pw});
+    if (result?.success) {
+      sessionStorage.setItem(AUTH_SESSION_KEY,"1");
+      sessionStorage.setItem(ADMIN_KEY_SESSION_KEY,pw);
+      setPw("");
+      onUnlock();
+    } else {
+      setErr(result?.error || "Incorrect staff password");
+      setPw("");
+      setTimeout(()=>setErr(""),8000);
+    }
+    setChecking(false);
   }
 
   return (
@@ -498,6 +663,7 @@ function LockScreen({onUnlock}) {
         value={pw}
         onChange={e=>setPw(e.target.value)}
         onKeyDown={e=>e.key==="Enter" && check()}
+        disabled={checking}
         placeholder="••••••••"
         style={{
           textAlign:"center",
@@ -510,13 +676,14 @@ function LockScreen({onUnlock}) {
 
       <button
         onClick={check}
+        disabled={checking}
         style={{
           ...css.btn("blue"),
           width:"100%",
           padding:13
         }}
       >
-        Enter
+        {checking ? "Checking…" : "Enter"}
       </button>
 
       <div style={{
@@ -550,6 +717,12 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [copied, setCopied]       = useState({});
   const [toast, setToast]         = useState("");
   const [orderSearch, setOrderSearch] = useState("");
+  const [contactSheets, setContactSheets] = useState([]);
+  const [publishStage, setPublishStage] = useState("");
+  const [skipContactSheets, setSkipContactSheets] = useState(false);
+  const [excludedRolls, setExcludedRolls] = useState([]);
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+  const [previewRoll, setPreviewRoll] = useState(0);
   const dropRef = useRef();
 
   function resetOrderForm() {
@@ -563,12 +736,23 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setRolls([""]);
     setDriveLink("");
     setNotes("");
+    if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
     setResult(null);
     setGenerating(false);
     setCreatingFolder(false);
     setShowDrop(false);
     setCopied({});
     setOrderSearch("");
+    contactSheets.forEach(sheet => {
+      if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
+      if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
+    });
+    setContactSheets([]);
+    setPublishStage("");
+    setSkipContactSheets(false);
+    setExcludedRolls([]);
+    setGuidelinesOpen(false);
+    setPreviewRoll(0);
   }
 
   useEffect(() => {
@@ -696,7 +880,42 @@ function addRoll() {
 
   function addRoll()        { setRolls(r=>[...r,""]); }
   function updateRoll(i,v)  { setRolls(r=>r.map((x,j)=>j===i?v:x)); }
-  function removeRoll(i)    { setRolls(r=>r.filter((_,j)=>j!==i)); }
+  function removeRoll(i)    {
+    setRolls(r=>r.filter((_,j)=>j!==i));
+    setExcludedRolls(previous=>previous.filter(index=>index!==i).map(index=>index>i?index-1:index));
+    setContactSheets(previous=>previous.flatMap(sheet=>{
+      if (sheet.rollIndex===i) {
+        if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
+        if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
+        return [];
+      }
+      if (sheet.rollIndex>i) {
+        const rollIndex=sheet.rollIndex-1;
+        return [{...sheet,rollIndex,rollKey:`${rollIndex}:${sheet.filmName}`}];
+      }
+      return [sheet];
+    }));
+  }
+
+  function handleRollInclusionChange(index,include) {
+    if (include) setSkipContactSheets(false);
+    setExcludedRolls(previous => include
+      ? previous.filter(item=>item!==index)
+      : [...new Set([...previous,index])].sort((a,b)=>a-b));
+  }
+
+  function handleContactSheetReady(sheet) {
+    setSkipContactSheets(false);
+    setContactSheets(previous => {
+      const replaced = previous.find(item => item.rollKey === sheet.rollKey);
+      if (replaced) {
+        if (replaced.deliveryPreviewUrl) URL.revokeObjectURL(replaced.deliveryPreviewUrl);
+        if (replaced.storyPreviewUrl) URL.revokeObjectURL(replaced.storyPreviewUrl);
+      }
+      return [...previous.filter(item => item.rollKey !== sheet.rollKey), sheet]
+        .sort((a,b) => a.rollIndex-b.rollIndex);
+    });
+  }
 
   async function createFolder() {
     if (!orderNo.trim()) {
@@ -721,9 +940,14 @@ function addRoll() {
   }
 
   async function generate() {
-    const film = rolls.filter(Boolean).join(" · ");
-    if (!orderNo.trim()||!film||!driveLink.trim()) return;
+    const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
+    const film = namedRolls.join(" · ");
+    if (!canGen) return;
+    const sheetsForDelivery = skipContactSheets ? [] : contactSheets
+      .filter(sheet=>!excludedRolls.includes(sheet.rollIndex))
+      .sort((a,b)=>a.rollIndex-b.rollIndex);
     setGenerating(true);
+    setPublishStage("Saving delivery details");
     
     const registryName = selCust ? selCust.name : (custInput.trim() || "Customer");
     const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
@@ -735,23 +959,95 @@ function addRoll() {
       notes: notes.trim(),
       driveLink: driveLink.trim()
     };
+    let uploadNonce = "";
 
-    const saved = await apiCall("addOrder", {
-      ...deliveryOrder,
-      orderNumberText: deliveryOrder.orderNumber,
-      customerName: registryName,
-      customerId: selCust?.id || ""
-    });
-    rememberOrderNumber(saved?.id, deliveryOrder.orderNumber);
+    try {
+      const saved = await apiCall("addOrder", {
+        ...deliveryOrder,
+        orderNumberText:deliveryOrder.orderNumber,
+        customerName:registryName,
+        customerId:selCust?.id || ""
+      });
+      if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
+      rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
 
-    const longUrl = deliveryUrl(deliveryOrder);
-    onOrderSaved({ ...saved, ...deliveryOrder }, selCust?.id);
+      const uploadSession = await apiCall("beginContactSheetUpload", {
+        orderNumber:deliveryOrder.orderNumber,
+        adminKey:getContactSheetAdminKey()
+      });
+      if (!uploadSession?.uploadNonce) {
+        throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
+      }
+      uploadNonce = uploadSession.uploadNonce;
 
-    const shortUrl = longUrl;
+      const uploadedSheets = [];
+      for (let index=0;index<sheetsForDelivery.length;index+=1) {
+        const sheet = sheetsForDelivery[index];
+        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
+        const deliveryUrl = await uploadContactSheetVariant({
+          orderNumber:deliveryOrder.orderNumber,
+          uploadNonce,
+          sheet,
+          variant:"delivery"
+        });
 
-    setResult({url: longUrl, shortUrl, custName:name, orderNumber:deliveryOrder.orderNumber, film, notes:deliveryOrder.notes});
-    setCopied({}); setGenerating(false);
-    showToast("Order saved and link generated ✓");
+        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
+        const storyUrl = await uploadContactSheetVariant({
+          orderNumber:deliveryOrder.orderNumber,
+          uploadNonce,
+          sheet,
+          variant:"story"
+        });
+
+        uploadedSheets.push({
+          rollIndex:sheet.rollIndex,
+          filmName:sheet.filmName,
+          frameCount:sheet.frameCount,
+          scanStyle:normalizeScanStyle(sheet.scanStyle),
+          format:normalizeFrameFormat(sheet.format),
+          deliveryUrl,
+          storyUrl
+        });
+      }
+
+      setPublishStage("Publishing delivery page");
+      const completed = await apiCall("completeContactSheetUpload", {
+        orderNumber:deliveryOrder.orderNumber,
+        uploadNonce,
+        contactSheets:uploadedSheets
+      });
+      if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
+      uploadNonce = "";
+
+      const longUrl = deliveryUrl(deliveryOrder);
+      const shortUrl = longUrl;
+      onOrderSaved({...(completed.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
+
+      const previewUrl = await createLocalDeliveryPreview({
+        customerName:name,
+        orderNumber:deliveryOrder.orderNumber,
+        driveLink:deliveryOrder.driveLink,
+        film:deliveryOrder.film,
+        notes:deliveryOrder.notes,
+        contactSheets:sheetsForDelivery
+      });
+      if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
+      setPreviewRoll(0);
+      setResult({url:longUrl,shortUrl,previewUrl,custName:name,orderNumber:deliveryOrder.orderNumber,film,notes:deliveryOrder.notes,contactSheets:sheetsForDelivery,driveLink:deliveryOrder.driveLink});
+      setCopied({});
+      showToast(sheetsForDelivery.length ? "Contact sheets uploaded and delivery link ready ✓" : "Order saved without contact sheets ✓");
+    } catch(error) {
+      if (uploadNonce) {
+        await apiCall("cancelContactSheetUpload", {
+          orderNumber:deliveryOrder.orderNumber,
+          uploadNonce
+        });
+      }
+      showToast(error?.message || "Could not publish this delivery");
+    } finally {
+      setGenerating(false);
+      setPublishStage("");
+    }
   }
 
   function copyText(text, key) {
@@ -827,7 +1123,25 @@ Saujana Film Lab Bali`;
     "_blank"
   );
 }
-  const canGen = orderNo.trim() && rolls.some(Boolean) && driveLink.trim();
+  const contactSheetCustomerName = (showDeliveryName ? deliveryName.trim() : "") || (selCust ? selCust.name : custInput.trim());
+  const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
+  const requiredDetailsReady = Boolean(orderNo.trim() && contactSheetCustomerName && namedRolls.length && driveLink.trim());
+  const everyRollResolved = Boolean(namedRolls.length) && namedRolls.every((roll,index) =>
+    excludedRolls.includes(index) || contactSheets.some(sheet => sheet.rollIndex===index && sheet.filmName===roll)
+  );
+  const unresolvedRollCount = namedRolls.filter((roll,index)=>
+    !excludedRolls.includes(index) && !contactSheets.some(sheet=>sheet.rollIndex===index && sheet.filmName===roll)
+  ).length;
+  const canGen = requiredDetailsReady && (skipContactSheets || everyRollResolved);
+  const publishHint = !requiredDetailsReady
+    ? "Complete the order number, customer, film roll, and Drive link first."
+    : (!skipContactSheets && !everyRollResolved)
+      ? `Prepare or skip ${unresolvedRollCount} remaining roll${unresolvedRollCount===1?"":"s"}.`
+      : skipContactSheets
+        ? "Ready to publish without contact sheets."
+        : "Every roll is prepared or intentionally skipped. Ready to publish."
+  const previewSheets = result?.contactSheets || [];
+  const activePreviewSheet = previewSheets.length ? previewSheets[Math.min(previewRoll,previewSheets.length-1)] : null;
   const hasOrderSearch = orderSearch.trim().length > 0;
   const pastOrders = orders
     .filter(o=>o.driveLink)
@@ -860,6 +1174,13 @@ Saujana Film Lab Bali`;
     // Split film string safely
     const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
     setRolls(rollsArray);
+    contactSheets.forEach(sheet=>{
+      if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
+      if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
+    });
+    setContactSheets([]);
+    setExcludedRolls([]);
+    setSkipContactSheets(false);
     
     setDriveLink(o.driveLink || "");
     setNotes(o.notes || "");
@@ -887,6 +1208,15 @@ Saujana Film Lab Bali`;
       <div style={{width:400,flexShrink:0,overflowY:"auto"}}>
         <div style={css.card}>
           <span style={css.secLabel}>New Order</span>
+          <button className="guidelines-toggle" type="button" aria-expanded={guidelinesOpen} onClick={()=>setGuidelinesOpen(open=>!open)}>
+            Order guidelines <span>{guidelinesOpen?"−":"+"}</span>
+          </button>
+          {guidelinesOpen && <div className="dispatch-flow" aria-label="Order guidelines">
+            <div className="dispatch-flow-step"><strong>01</strong><span>Fill the form as usual: name, email, Drive link, and roll details.</span></div>
+            <div className="dispatch-flow-step"><strong>02</strong><span>Add scans on the right.</span></div>
+            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare & export.</span></div>
+            <div className="dispatch-flow-step"><strong>04</strong><span>Publish & generate delivery link.</span></div>
+          </div>}
 
           {/* Order number */}
           <div style={{marginBottom:18}}>
@@ -1179,16 +1509,42 @@ Saujana Film Lab Bali`;
             <input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. handle with care"/>
           </div>
 
+          <label style={{display:"flex",alignItems:"flex-start",gap:9,padding:"12px 13px",marginBottom:12,background:"var(--dark)",border:`1px solid ${skipContactSheets?"var(--gold)":"var(--border)"}`,fontSize:9,color:"var(--light)",lineHeight:1.55,cursor:"pointer"}}>
+            <input type="checkbox" checked={skipContactSheets} onChange={e=>setSkipContactSheets(e.target.checked)} style={{width:"auto",marginTop:2}}/>
+            <span><strong style={{display:"block",color:"var(--white)",marginBottom:2}}>Do not include contact sheets</strong>Use this for short rolls or any delivery that should only show the Drive download.</span>
+          </label>
+
           <button className="day-accent" onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
-            {generating?"Saving...":"Generate Delivery Link"}
+            {generating?"Publishing delivery...":"Publish & Generate Delivery Link"}
           </button>
+          <div style={{fontSize:8,color:canGen?"var(--greenT)":"var(--dim)",lineHeight:1.6,marginTop:9,textAlign:"center"}}>
+            {publishHint}
+          </div>
         </div>
       </div>
 
       {/* Result */}
       <div style={{flex:1,minWidth:0,overflowY:"auto"}}>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={css.card}>
+          <ContactSheetGenerator
+            embedded
+            orderNumber={cleanOrderNumber(orderNo)}
+            customerName={contactSheetCustomerName}
+            rolls={rolls}
+            excludedRolls={skipContactSheets ? rolls.map((_,index)=>index) : excludedRolls}
+            onRollInclusionChange={handleRollInclusionChange}
+            onSheetsChange={handleContactSheetReady}
+          />
+          <div style={{marginTop:10,fontSize:9,color:skipContactSheets?"var(--gold-l)":contactSheets.length?"var(--greenT)":"var(--dim)",lineHeight:1.6}}>
+            {skipContactSheets
+              ? "Contact sheets are switched off for this delivery."
+              : contactSheets.length
+              ? `${contactSheets.length} contact-sheet pair${contactSheets.length===1?"":"s"} prepared${excludedRolls.length?` · ${excludedRolls.length} roll${excludedRolls.length===1?"":"s"} skipped`:""}: ${contactSheets.map(sheet=>sheet.filmName).join(", ")}.`
+              : "Optional. Orders with fewer than 10 usable frames can continue without a contact sheet."}
+          </div>
+        </div>
         {result ? (
           <>
             <div style={css.card}>
@@ -1232,8 +1588,45 @@ Saujana Film Lab Bali`;
 </button>
               </div>
               <div style={{textAlign:"center", marginTop:12}}>
-                <a className="readable-link" href={result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
+                <a className="readable-link" href={result.previewUrl || result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
                   Preview Delivery Page ↗
+                </a>
+                {!API && <div style={{fontSize:8,color:"var(--dim)",lineHeight:1.6,marginTop:8}}>The beta preview includes the contact sheets locally. The customer-share link will include them once storage is connected.</div>}
+              </div>
+            </div>
+
+            <div style={css.card}>
+              <span style={css.secLabel}>Customer Delivery Preview</span>
+              <div style={{background:"#070707",border:"1px solid var(--border)",padding:18}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:14,alignItems:"flex-end",marginBottom:15}}>
+                  <div>
+                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontStyle:"italic",color:"#fff"}}>Your scans are ready</div>
+                    <div style={{fontSize:9,color:"#83909c",marginTop:4}}>{result.custName} · Order {result.orderNumber}</div>
+                  </div>
+                  <span style={{fontSize:8,color:"#c8922a",letterSpacing:".18em",textTransform:"uppercase"}}>Saujana Film Lab Bali</span>
+                </div>
+                {activePreviewSheet ? (
+                  <div>
+                    <div style={{position:"relative"}}>
+                      <img src={activePreviewSheet.deliveryPreviewUrl} alt={`${activePreviewSheet.filmName} contact sheet`} style={{display:"block",width:"100%",height:"auto",border:"1px solid #222"}}/>
+                      {previewSheets.length>1 && <>
+                        <button onClick={()=>setPreviewRoll(index=>(index-1+previewSheets.length)%previewSheets.length)} aria-label="Previous roll" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>‹</button>
+                        <button onClick={()=>setPreviewRoll(index=>(index+1)%previewSheets.length)} aria-label="Next roll" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>›</button>
+                      </>}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:7,fontSize:8,color:"#83909c",textTransform:"uppercase",letterSpacing:".1em"}}>
+                      <span>{activePreviewSheet.filmName}</span>
+                      <span>{activePreviewSheet.frameCount} frames</span>
+                    </div>
+                    {previewSheets.length>1 && <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:10}}>{previewSheets.map((sheet,index)=><button key={sheet.rollKey} onClick={()=>setPreviewRoll(index)} aria-label={`Show roll ${index+1}`} style={{width:7,height:7,padding:0,border:0,borderRadius:"50%",background:index===previewRoll?"#c8922a":"#4b4b4b"}}/>)}</div>}
+                  </div>
+                ) : (
+                  <div style={{padding:"26px 14px",border:"1px dashed #27313a",textAlign:"center",fontSize:9,color:"#66727d"}}>
+                    No contact sheet included for this delivery.
+                  </div>
+                )}
+                <a href={result.driveLink} target="_blank" rel="noopener" style={{display:"block",marginTop:15,padding:"12px 14px",background:"#c8922a",color:"#111",textAlign:"center",fontSize:9,fontWeight:700,letterSpacing:".13em",textTransform:"uppercase"}}>
+                  Download full-resolution scans ↗
                 </a>
               </div>
             </div>
@@ -1637,7 +2030,9 @@ async function updateCustomerInfo() {
 
 function App() {
   const cachedDispatch = readDispatchCache();
-  const [authed, setAuthed]       = useState(sessionStorage.getItem("saujana-auth")==="1");
+  const [authed, setAuthed]       = useState(
+    sessionStorage.getItem(AUTH_SESSION_KEY)==="1" && Boolean(sessionStorage.getItem(ADMIN_KEY_SESSION_KEY))
+  );
   const [theme, setTheme]         = useState("night");
   const [tab, setTab]             = useState("dispatch");
   const [customers, setCustomers] = useState(cachedDispatch?.customers || []);
@@ -1675,6 +2070,13 @@ function App() {
   }
 
   async function load() {
+    if (!API) {
+      setLoading(false);
+      setSyncing(false);
+      setRefreshStatus("");
+      setLoadError("");
+      return;
+    }
     setLoading(customers.length === 0 && orders.length === 0);
     setSyncing(true);
     setRefreshStatus("working");

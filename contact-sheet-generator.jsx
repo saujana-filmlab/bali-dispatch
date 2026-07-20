@@ -3,15 +3,37 @@ const CSG_ALLOWED = /\.(jpe?g|tiff?)$/i;
 const CSG_LOGOS = {};
 
 function csgLoadImage(src) {
-  if (CSG_LOGOS[src]) return CSG_LOGOS[src];
-  CSG_LOGOS[src] = new Promise((resolve, reject) => {
+  const url = new URL(src, document.baseURI).href;
+  if (CSG_LOGOS[url]) return CSG_LOGOS[url];
+  CSG_LOGOS[url] = new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error(`Could not load ${src}`));
-    image.src = src;
+    image.onerror = () => {
+      delete CSG_LOGOS[url];
+      reject(new Error(`Required contact-sheet logo could not load: ${src}`));
+    };
+    image.src = url;
   });
-  return CSG_LOGOS[src];
+  return CSG_LOGOS[url];
 }
+
+let CSG_BRAND_READY = null;
+
+function csgLoadBrandAssets() {
+  if (!CSG_BRAND_READY) {
+    CSG_BRAND_READY = Promise.all([
+      csgLoadImage("saujana-white.png"),
+      csgLoadImage("scansauce-white.png")
+    ]).catch(error => {
+      CSG_BRAND_READY = null;
+      throw error;
+    });
+  }
+  return CSG_BRAND_READY;
+}
+
+// Load mandatory branding while staff completes the order form, before scans are prepared.
+csgLoadBrandAssets().catch(()=>{});
 
 function csgGrid(count, output, format) {
   if (format === "full") {
@@ -85,7 +107,7 @@ async function csgRender(canvas, frames, output, format, numbered, filmName, cus
   const gridHeight = cellHeight * rows + gapY * (rows - 1);
   const startY = header + (areaHeight - gridHeight) / 2;
 
-  const [saujana, scansauce] = await Promise.all([csgLoadImage("saujana-white.png"), csgLoadImage("scansauce-white.png")]);
+  const [saujana, scansauce] = await csgLoadBrandAssets();
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
   csgContained(ctx, saujana, margin, output === "delivery" ? 6 : 128, output === "delivery" ? 280 : 248, output === "delivery" ? 78 : 72);
   const scanWidth = output === "delivery" ? 180 : 158;
@@ -132,13 +154,6 @@ async function csgRender(canvas, frames, output, format, numbered, filmName, cus
 
 function csgCanvasBlob(canvas, quality=.86) {
   return new Promise((resolve,reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("JPEG export failed")),"image/jpeg",quality));
-}
-
-function csgDownload(blob, name) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a"); link.href=url; link.download=name;
-  document.body.appendChild(link); link.click(); link.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 
 function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null }) {
@@ -241,17 +256,13 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
     finally { setWorking(false); setIsPreparing(false); }
   }
 
-  async function exportPair() {
+  async function preparePair() {
     if (!frames.length || !confirmed) return;
     setWorking(true); setProgress("Preparing both contact sheets");
     try {
-      const base=(filmName.trim()||"saujana-roll").replace(/[<>:"/\\|?*]/g,"-");
       const deliveryBlob = await csgCanvasBlob(deliveryRef.current);
       const storyBlob = await csgCanvasBlob(storyRef.current);
-      csgDownload(deliveryBlob,`${base}_contact-4x3.jpg`);
-      await new Promise(resolve=>setTimeout(resolve,250));
-      csgDownload(storyBlob,`${base}_contact-story.jpg`);
-      setProgress("Pair prepared and exported");
+      setProgress("Pair ready for delivery");
       if (onSheetsChange) onSheetsChange({
         ready:true,
         rollIndex:selectedRoll,
@@ -267,7 +278,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
         deliveryPreviewUrl:URL.createObjectURL(deliveryBlob),
         storyPreviewUrl:URL.createObjectURL(storyBlob)
       });
-    } catch(err) { setError(err.message || "Export failed."); }
+    } catch(err) { setError(err.message || "Could not prepare the contact sheets."); }
     finally { setWorking(false); }
   }
 
@@ -283,7 +294,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       .csg-shell.embedded{max-width:none}.csg-shell.embedded .csg-title{margin-bottom:14px}.csg-shell.embedded .csg-title h1{font-size:17px}.csg-shell.embedded .csg-layout{grid-template-columns:270px 1fr;gap:18px}.csg-shell.embedded .csg-panel{padding:18px}.csg-shell.embedded .csg-stage{height:500px}.csg-shell.embedded .csg-label{font-size:9px}.csg-shell.embedded .csg-choice{font-size:10px}.csg-shell.embedded .csg-check{font-size:11px}.csg-shell.embedded .csg-help,.csg-shell.embedded .csg-status,.csg-shell.embedded .csg-export small{font-size:10px}.csg-shell.embedded .csg-tabs button,.csg-shell.embedded .csg-tabs span{font-size:9px}
       @media(max-width:800px){.csg-layout,.csg-shell.embedded .csg-layout{grid-template-columns:1fr}.csg-stage{height:390px}.csg-title{align-items:flex-start;gap:12px}}
     `}</style>
-    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Uses the customer and film-roll data above${orderNumber ? ` · Order ${orderNumber}` : ""}.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div><span className="csg-local">Local processing only</span></div>
+    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Uses the customer and film-roll data above${orderNumber ? ` · Order ${orderNumber}` : ""}.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div><span className="csg-local">Original scans stay local</span></div>
     <div className="csg-layout">
       <aside className="csg-panel">
         {availableRolls.length > 1 && <><label className="csg-label">Film roll</label><select value={selectedRoll} disabled={working} onChange={e=>chooseLinkedRoll(Number(e.target.value))}>{availableRolls.map((roll,index)=><option key={`${roll}-${index}`} value={index}>{`Roll ${index+1} · ${roll}`}</option>)}</select></>}
@@ -309,7 +320,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
             <canvas ref={deliveryRef} className={active==="delivery"&&frames.length?"":"hidden"}/>
             <canvas ref={storyRef} className={active==="story"&&frames.length?"":"hidden"}/>
           </div>
-          <div className="csg-export"><small>Prepare this pair, review it in the delivery preview, then publish the link.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working} onClick={exportPair}>Prepare & export pair</button></div>
+          <div className="csg-export"><small>Prepare this pair for the delivery preview. It uploads to R2 only when you publish; nothing is downloaded here.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working} onClick={preparePair}>Prepare pair</button></div>
         </div>
       </section>
     </div>

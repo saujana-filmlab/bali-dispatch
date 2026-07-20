@@ -2,6 +2,58 @@ const CSG_COLLATOR = new Intl.Collator(undefined, { numeric:true, sensitivity:"b
 const CSG_ALLOWED = /\.(jpe?g|tiff?)$/i;
 const CSG_LOGOS = {};
 
+function csgFileName(file) {
+  return file.webkitRelativePath || file.name || "";
+}
+
+function csgSupportedFile(file) {
+  return CSG_ALLOWED.test(csgFileName(file)) || /image\/(jpeg|tiff)/i.test(file.type);
+}
+
+function csgSortFiles(files) {
+  return Array.from(files).filter(csgSupportedFile).sort((a,b)=>CSG_COLLATOR.compare(csgFileName(a),csgFileName(b)));
+}
+
+function csgReadDirectory(reader) {
+  return new Promise((resolve,reject) => {
+    const entries = [];
+    const readBatch = () => reader.readEntries(batch => {
+      if (!batch.length) { resolve(entries); return; }
+      entries.push(...batch);
+      readBatch();
+    },reject);
+    readBatch();
+  });
+}
+
+function csgEntryFile(entry) {
+  return new Promise((resolve,reject) => entry.file(resolve,reject));
+}
+
+async function csgFilesFromEntry(entry) {
+  if (entry.isFile) return [await csgEntryFile(entry)];
+  if (!entry.isDirectory) return [];
+  const children = await csgReadDirectory(entry.createReader());
+  const files = [];
+  for (const child of children.sort((a,b)=>CSG_COLLATOR.compare(a.name,b.name))) {
+    files.push(...await csgFilesFromEntry(child));
+  }
+  return files;
+}
+
+async function csgDroppedFolders(dataTransfer) {
+  const entries = Array.from(dataTransfer.items || [])
+    .map(item => typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null)
+    .filter(Boolean);
+  const folders = entries.filter(entry=>entry.isDirectory).sort((a,b)=>CSG_COLLATOR.compare(a.name,b.name));
+  if (!folders.length) return [];
+  const groups = [];
+  for (const folder of folders) {
+    groups.push({name:folder.name,files:csgSortFiles(await csgFilesFromEntry(folder))});
+  }
+  return groups;
+}
+
 function csgLoadImage(src) {
   const url = new URL(src, document.baseURI).href;
   if (CSG_LOGOS[url]) return CSG_LOGOS[url];
@@ -177,6 +229,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const deliveryRef = React.useRef(null);
   const storyRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  const folderInputRef = React.useRef(null);
 
   React.useEffect(() => {
     if (linkedCustomerName) setCustomerName(linkedCustomerName);
@@ -231,28 +284,74 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
     setError("");
   }
 
-  async function prepare(fileList) {
-    const files = Array.from(fileList).filter(file => CSG_ALLOWED.test(file.name) || /image\/(jpeg|tiff)/i.test(file.type)).sort((a,b)=>CSG_COLLATOR.compare(a.name,b.name));
+  async function prepareFiles(files, startAt=0, total=files.length, folderName="") {
+    const prepared = [];
+    for (let i=0;i<files.length;i+=1) {
+      const current = startAt+i+1;
+      setPrepareCount({current,total});
+      setProgress(`${folderName ? `${folderName} · ` : ""}Preparing frame ${i+1} of ${files.length}`);
+      let bitmap;
+      try { bitmap = await createImageBitmap(files[i],{imageOrientation:"from-image"}); }
+      catch { throw new Error(`${files[i].name} could not be decoded. TIFF support depends on the browser; export it as JPEG if needed.`); }
+      const maxSide = 1800;
+      const scale = Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
+      const canvas = document.createElement("canvas"); canvas.width=Math.round(bitmap.width*scale); canvas.height=Math.round(bitmap.height*scale);
+      const ctx = canvas.getContext("2d",{colorSpace:"srgb"}); ctx.imageSmoothingQuality="high"; ctx.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
+      const blob = await csgCanvasBlob(canvas,.88);
+      prepared.push({name:csgFileName(files[i]),blob});
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    return prepared;
+  }
+
+  async function prepare(fileList, folderName="") {
+    const files = csgSortFiles(fileList);
     if (!files.length) { setError("Choose JPEG or TIFF scan files."); return; }
     setWorking(true); setIsPreparing(true); setPrepareCount({current:0,total:files.length}); setError(""); setFrames([]);
-    const prepared = [];
     try {
-      for (let i=0;i<files.length;i+=1) {
-        setPrepareCount({current:i+1,total:files.length});
-        setProgress(`Preparing frame ${i+1} of ${files.length}`);
-        let bitmap;
-        try { bitmap = await createImageBitmap(files[i],{imageOrientation:"from-image"}); }
-        catch { throw new Error(`${files[i].name} could not be decoded. TIFF support depends on the browser; export it as JPEG if needed.`); }
-        const maxSide = 1800;
-        const scale = Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
-        const canvas = document.createElement("canvas"); canvas.width=Math.round(bitmap.width*scale); canvas.height=Math.round(bitmap.height*scale);
-        const ctx = canvas.getContext("2d",{colorSpace:"srgb"}); ctx.imageSmoothingQuality="high"; ctx.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
-        const blob = await csgCanvasBlob(canvas,.88);
-        prepared.push({name:files[i].name,blob});
-        await new Promise(resolve=>setTimeout(resolve,0));
-      }
-      setFrames(prepared); setProgress(`${prepared.length} frames ready`);
+      const prepared = await prepareFiles(files,0,files.length,folderName);
+      setFrames(prepared); setConfirmed(false); setProgress(`${folderName ? `${folderName} · ` : ""}${prepared.length} frames ready`);
     } catch(err) { setError(err.message || "The scans could not be prepared."); setProgress(""); }
+    finally { setWorking(false); setIsPreparing(false); }
+  }
+
+  async function prepareFolderDrop(dataTransfer) {
+    setError("");
+    let groups;
+    try { groups = await csgDroppedFolders(dataTransfer); }
+    catch(err) { setError(err.message || "The dropped folder could not be read."); return; }
+    if (!groups.length) { prepare(dataTransfer.files); return; }
+    const emptyFolder = groups.find(group=>!group.files.length);
+    if (emptyFolder) { setError(`${emptyFolder.name} does not contain JPEG or TIFF scan files.`); return; }
+    if (groups.length === 1) { prepare(groups[0].files,groups[0].name); return; }
+
+    const rollIndexes = availableRolls.map((_,index)=>index).filter(index=>!excludedRolls.includes(index));
+    if (groups.length > rollIndexes.length) {
+      setError(`You dropped ${groups.length} roll folders, but only ${rollIndexes.length} included rolls are in the order form.`);
+      return;
+    }
+
+    const total = groups.reduce((sum,group)=>sum+group.files.length,0);
+    setWorking(true); setIsPreparing(true); setPrepareCount({current:0,total}); setFrames([]);
+    try {
+      let startAt = 0;
+      const preparedWorkspaces = {};
+      for (let i=0;i<groups.length;i+=1) {
+        const group = groups[i];
+        const prepared = await prepareFiles(group.files,startAt,total,group.name);
+        startAt += group.files.length;
+        preparedWorkspaces[rollIndexes[i]] = {
+          frames:prepared,scanStyle:"Classic",format:"full",numbered:true,confirmed:false,active:"delivery",
+          progress:`${group.name} · ${prepared.length} frames ready`
+        };
+      }
+      const firstIndex = rollIndexes[0];
+      const first = preparedWorkspaces[firstIndex];
+      setRollWorkspaces(previous=>({...previous,...preparedWorkspaces}));
+      setSelectedRoll(firstIndex); setFilmName(availableRolls[firstIndex] || "");
+      setFrames(first.frames); setScanStyle(first.scanStyle); setFormat(first.format); setNumbered(first.numbered);
+      setConfirmed(false); setActive("delivery"); setProgress(first.progress);
+    } catch(err) { setError(err.message || "The roll folders could not be prepared."); setProgress(""); }
     finally { setWorking(false); setIsPreparing(false); }
   }
 
@@ -289,7 +388,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       .csg-shell{max-width:1100px;margin:0 auto;color:var(--light)}
       .csg-title{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px}.csg-title h1{font-size:18px;letter-spacing:.06em;color:var(--white);font-weight:500}.csg-title p{font-size:10px;color:var(--muted);margin-top:6px}.csg-local{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:var(--greenT);border:1px solid var(--greenB);padding:6px 9px}
       .csg-layout{display:grid;grid-template-columns:300px 1fr;gap:16px}.csg-panel{background:var(--card);border:1px solid var(--border);padding:18px}.csg-label{display:block;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin:16px 0 7px}.csg-label:first-child{margin-top:0}.csg-panel input,.csg-panel select{width:100%;padding:10px 11px}.csg-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}.csg-choice{padding:10px;background:var(--card2);color:var(--muted);border:1px solid var(--border2);font-size:9px}.csg-choice.active{border-color:var(--blue-l);color:var(--white);background:var(--blue-gl)}.csg-check{display:flex;gap:9px;align-items:flex-start;margin-top:14px;color:var(--light);font-size:10px;line-height:1.5}.csg-check input{width:auto;margin-top:2px}.csg-help{font-size:9px;color:var(--dim);line-height:1.5;margin-top:6px}
-      .csg-work{min-width:0}.csg-drop{min-height:145px;border:1px dashed var(--border2);background:var(--dark);display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;transition:.2s}.csg-drop.drag{border-color:var(--gold);background:rgba(200,149,22,.06)}.csg-drop.excluded{border-style:solid;opacity:.72}.csg-drop strong{display:block;color:var(--white);font-size:13px;margin-bottom:7px}.csg-drop span{font-size:9px;color:var(--muted)}.csg-drop button{margin-top:14px;padding:8px 14px;background:var(--card2);color:var(--light);border:1px solid var(--border2);font-size:9px}.csg-rollo-loading{display:flex;align-items:center;justify-content:center;gap:17px;text-align:left}.csg-rollo-sprite{width:96px;height:104px;flex:0 0 96px;background-image:url('rollo-spritesheet.png');background-repeat:no-repeat;background-size:768px 936px;background-position:0 -728px;clip-path:inset(7px 0 6px 9px);animation:csgRolloProcess .92s steps(6) infinite}.csg-rollo-loading strong{font-size:15px;margin:0 0 5px}.csg-rollo-loading span{letter-spacing:.12em;text-transform:uppercase}.csg-include{padding:10px;border:1px solid var(--border2);background:var(--dark)}@keyframes csgRolloProcess{to{background-position-x:-576px}}
+      .csg-work{min-width:0}.csg-drop{min-height:185px;border:1px dashed var(--border2);background:var(--dark);display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;transition:.2s}.csg-drop.drag{border-color:var(--gold);background:rgba(200,149,22,.06)}.csg-drop.excluded{border-style:solid;opacity:.72}.csg-drop strong{display:block;color:var(--white);font-size:13px;margin-bottom:7px}.csg-drop span{font-size:9px;color:var(--muted)}.csg-drop-actions{display:flex;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}.csg-drop button{margin:0;padding:8px 14px;background:var(--card2);color:var(--light);border:1px solid var(--border2);font-size:9px}.csg-rollo-loading{display:flex;align-items:center;justify-content:center;gap:17px;text-align:left}.csg-rollo-sprite{width:96px;height:104px;flex:0 0 96px;background-image:url('rollo-spritesheet.png');background-repeat:no-repeat;background-size:768px 936px;background-position:0 -728px;clip-path:inset(7px 0 6px 9px);animation:csgRolloProcess .92s steps(6) infinite}.csg-rollo-loading strong{font-size:15px;margin:0 0 5px}.csg-rollo-loading span{letter-spacing:.12em;text-transform:uppercase}.csg-include{padding:10px;border:1px solid var(--border2);background:var(--dark)}@keyframes csgRolloProcess{to{background-position-x:-576px}}
       .csg-status{padding:9px 0;font-size:9px}.csg-error{color:#e68d7b}.csg-preview{background:var(--card);border:1px solid var(--border);padding:12px}.csg-tabs{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.csg-tabs div{display:flex;gap:6px}.csg-tabs button{padding:7px 10px;background:none;border:1px solid var(--border);color:var(--muted);font-size:8px;letter-spacing:.12em;text-transform:uppercase}.csg-tabs button.active{color:var(--white);border-color:var(--blue-l)}.csg-tabs span{font-size:8px;color:var(--dim)}.csg-stage{height:520px;background:#050505;display:flex;align-items:center;justify-content:center;overflow:hidden}.csg-stage.empty{color:var(--dim);font-size:10px;letter-spacing:.18em;text-transform:uppercase}.csg-stage canvas{display:block;max-width:100%;max-height:100%;object-fit:contain}.csg-stage canvas.hidden{display:none}.csg-export{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:12px}.csg-export small{color:var(--dim);font-size:9px;line-height:1.5}.csg-export button{padding:11px 17px;border:1px solid var(--gold);background:var(--gold);color:#111;font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}.csg-export button:disabled{opacity:.35;cursor:not-allowed}
       .csg-shell.embedded{max-width:none}.csg-shell.embedded .csg-title{margin-bottom:14px}.csg-shell.embedded .csg-title h1{font-size:17px}.csg-shell.embedded .csg-layout{grid-template-columns:270px 1fr;gap:18px}.csg-shell.embedded .csg-panel{padding:18px}.csg-shell.embedded .csg-stage{height:500px}.csg-shell.embedded .csg-label{font-size:9px}.csg-shell.embedded .csg-choice{font-size:10px}.csg-shell.embedded .csg-check{font-size:11px}.csg-shell.embedded .csg-help,.csg-shell.embedded .csg-status,.csg-shell.embedded .csg-export small{font-size:10px}.csg-shell.embedded .csg-tabs button,.csg-shell.embedded .csg-tabs span{font-size:9px}
       @media(max-width:800px){.csg-layout,.csg-shell.embedded .csg-layout{grid-template-columns:1fr}.csg-stage{height:390px}.csg-title{align-items:flex-start;gap:12px}}
@@ -307,10 +406,10 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
         <label className="csg-check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span>I confirm these scans use <strong>scanSAUce: {scanStyle}</strong></span></label>
       </aside>
       <section className="csg-work">
-        <div className={`csg-drop ${dragging?"drag":""} ${rollIncluded?"":"excluded"}`} onDragOver={e=>{e.preventDefault();if(rollIncluded&&!isPreparing)setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);if(rollIncluded&&!isPreparing)prepare(e.dataTransfer.files)}}>
+        <div className={`csg-drop ${dragging?"drag":""} ${rollIncluded?"":"excluded"}`} onDragOver={e=>{e.preventDefault();if(rollIncluded&&!isPreparing)setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);if(rollIncluded&&!isPreparing)prepareFolderDrop(e.dataTransfer)}}>
           {isPreparing ? <div className="csg-rollo-loading" role="status" aria-live="polite"><div className="csg-rollo-sprite" aria-hidden="true"/><div><strong>{prepareCount.current} of {prepareCount.total}</strong><span>Rollo is preparing this roll</span></div></div>
           : !rollIncluded ? <div><strong>Contact sheet skipped for this roll</strong><span>Tick “Include a contact sheet for this roll” to add scans.</span></div>
-          : <div><strong>Drop one complete roll here</strong><span>JPEG or TIFF · 24, 36, 37, 72, or irregular frame counts</span><br/><button onClick={()=>inputRef.current.click()}>Choose scan files</button><input ref={inputRef} type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,image/jpeg,image/tiff" hidden onChange={e=>{prepare(e.target.files);e.target.value=""}}/></div>}
+          : <div><strong>Drop one roll or several roll folders here</strong><span>Each top-level folder becomes one roll · JPEG or TIFF</span><div className="csg-drop-actions"><button onClick={()=>inputRef.current.click()}>Choose scan files</button><button onClick={()=>folderInputRef.current.click()}>Choose folder</button></div><input ref={inputRef} type="file" multiple accept=".jpg,.jpeg,.tif,.tiff,image/jpeg,image/tiff" hidden onChange={e=>{prepare(e.target.files);e.target.value=""}}/><input ref={folderInputRef} type="file" webkitdirectory="" directory="" multiple hidden onChange={e=>{const folderName=e.target.files[0]?.webkitRelativePath?.split("/")[0] || "";prepare(e.target.files,folderName);e.target.value=""}}/></div>}
         </div>
         {error && <div className="csg-status csg-error">{error}</div>}
         <div className="csg-preview">

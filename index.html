@@ -456,11 +456,28 @@ const deliveryUrl = o => {
   if (!o || typeof o !== 'object') return BASE_URL;
   const orderNum = (o.orderNumber || "").toString();
   const name     = (o.customerName || "Customer").toString();
-  const film     = (o.film || "").toString();
+  const film     = (o.deliveryFilm || o.film || "").toString();
   const link     = (o.driveLink || "").toString();
   // Notes excluded from URL — fetched from Sheets by delivery page
   return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}`;
 };
+
+function compactRollDetails(values) {
+  const rolls = (values || []).map(value=>String(value || "").trim()).filter(Boolean);
+  if (!rolls.length) return "";
+
+  const groups = [];
+  rolls.forEach(name => {
+    const existing = groups.find(group=>group.name.toLocaleLowerCase()===name.toLocaleLowerCase());
+    if (existing) existing.count += 1;
+    else groups.push({name,count:1});
+  });
+
+  if (groups.length === 1 && groups[0].count > 1) {
+    return `${groups[0].name} · ${groups[0].count} rolls`;
+  }
+  return groups.map(group=>group.count > 1 ? `${group.name} × ${group.count}` : group.name).join(" · ");
+}
 
 const escapePreviewHtml = value => String(value || "")
   .replace(/&/g,"&amp;")
@@ -723,6 +740,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [deliveryName, setDeliveryName] = useState("");
   const [showDeliveryName, setShowDeliveryName] = useState(false);
   const [rolls, setRolls]         = useState([""]);
+  const [deliveryRollDetails, setDeliveryRollDetails] = useState("");
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
   const [result, setResult]       = useState(null);
@@ -749,6 +767,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setDeliveryName("");
     setShowDeliveryName(false);
     setRolls([""]);
+    setDeliveryRollDetails("");
     setDriveLink("");
     setNotes("");
     if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
@@ -957,6 +976,7 @@ function addRoll() {
   async function generate() {
     const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
     const film = namedRolls.join(" · ");
+    const deliveryFilm = deliveryRollDetails.trim() || compactRollDetails(namedRolls);
     if (!canGen) return;
     const sheetsForDelivery = skipContactSheets ? [] : contactSheets
       .filter(sheet=>!excludedRolls.includes(sheet.rollIndex))
@@ -971,6 +991,7 @@ function addRoll() {
       orderNumber: cleanOrderNumber(orderNo),
       customerName: name,
       film,
+      deliveryFilm,
       notes: notes.trim(),
       driveLink: driveLink.trim()
     };
@@ -1042,13 +1063,13 @@ function addRoll() {
         customerName:name,
         orderNumber:deliveryOrder.orderNumber,
         driveLink:deliveryOrder.driveLink,
-        film:deliveryOrder.film,
+        film:deliveryOrder.deliveryFilm,
         notes:deliveryOrder.notes,
         contactSheets:sheetsForDelivery
       });
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
       setPreviewRoll(0);
-      setResult({url:longUrl,shortUrl,previewUrl,custName:name,orderNumber:deliveryOrder.orderNumber,film,notes:deliveryOrder.notes,contactSheets:sheetsForDelivery,driveLink:deliveryOrder.driveLink});
+      setResult({url:longUrl,shortUrl,previewUrl,custName:name,orderNumber:deliveryOrder.orderNumber,film:deliveryFilm,notes:deliveryOrder.notes,contactSheets:sheetsForDelivery,driveLink:deliveryOrder.driveLink});
       setCopied({});
       showToast(sheetsForDelivery.length ? "Contact sheets uploaded and delivery link ready ✓" : "Order saved without contact sheets ✓");
     } catch(error) {
@@ -1140,6 +1161,7 @@ Saujana Film Lab Bali`;
 }
   const contactSheetCustomerName = (showDeliveryName ? deliveryName.trim() : "") || (selCust ? selCust.name : custInput.trim());
   const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
+  const deliveryRollSuggestion = compactRollDetails(namedRolls);
   const requiredDetailsReady = Boolean(orderNo.trim() && contactSheetCustomerName && namedRolls.length && driveLink.trim());
   const everyRollResolved = Boolean(namedRolls.length) && namedRolls.every((roll,index) =>
     excludedRolls.includes(index) || contactSheets.some(sheet => sheet.rollIndex===index && sheet.filmName===roll)
@@ -1192,6 +1214,8 @@ Saujana Film Lab Bali`;
     // Split film string safely
     const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
     setRolls(rollsArray);
+    const pastDeliveryFilm = compactRollDetails(rollsArray);
+    setDeliveryRollDetails("");
     contactSheets.forEach(sheet=>{
       if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
       if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
@@ -1204,13 +1228,13 @@ Saujana Film Lab Bali`;
     setNotes(o.notes || "");
     
     // 3. Update result UI
-    const longUrl = deliveryUrl(o);
+    const longUrl = deliveryUrl({...o,deliveryFilm:pastDeliveryFilm});
     setResult({
         url: longUrl, 
         shortUrl: longUrl, 
         custName: o.customerName || "Customer", 
         orderNumber: o.orderNumber || "",
-        film: o.film || "",
+        film: pastDeliveryFilm,
         notes: o.notes || ""
     });
     
@@ -1455,6 +1479,24 @@ Saujana Film Lab Bali`;
                     style={{background:"none",border:"none",color:"var(--muted)",fontSize:18,padding:"0 4px"}}>×</button>}
                 </div>
               ))}
+            </div>
+            <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
+              <label style={css.label}>
+                Delivery Roll Details
+                <span style={{color:"var(--dim)",fontSize:8,marginLeft:5}}>(optional customer-facing summary)</span>
+              </label>
+              <input
+                value={deliveryRollDetails}
+                onChange={e=>setDeliveryRollDetails(e.target.value)}
+                placeholder={deliveryRollSuggestion || "e.g. Kodak Ultramax 400 · 6 rolls"}
+              />
+              <div style={{fontSize:8.5,color:"var(--dim)",lineHeight:1.55,marginTop:6}}>
+                {deliveryRollDetails.trim()
+                  ? `Delivery page will show: ${deliveryRollDetails.trim()}`
+                  : deliveryRollSuggestion
+                    ? `Leave blank to show: ${deliveryRollSuggestion}`
+                    : "Shown below the customer name. Individual rolls above still control contact-sheet generation."}
+              </div>
             </div>
           </div>
 

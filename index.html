@@ -7,6 +7,8 @@
   
   <link rel="icon" type="image/png" href="dd-icon.png" />
   <link rel="apple-touch-icon" href="dd-icon.png" />
+  <link rel="preload" as="image" href="saujana-white.png" />
+  <link rel="preload" as="image" href="scansauce-white.png" />
 
   <meta property="og:title" content="Saujana - Darkroom Dispatch" />
   <meta property="og:description" content="Film Lab Bali · Operations Dashboard" />
@@ -394,11 +396,16 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}
     throw new Error(ticket?.error || `Could not prepare the ${variant} upload`);
   }
 
-  const response = await fetch(ticket.uploadUrl, {
-    method:"PUT",
-    headers:{"Content-Type":"image/jpeg"},
-    body:blob
-  });
+  let response;
+  try {
+    response = await fetch(ticket.uploadUrl, {
+      method:"PUT",
+      headers:{"Content-Type":"image/jpeg"},
+      body:blob
+    });
+  } catch(error) {
+    throw new Error("Could not reach contact-sheet storage. Open Darkroom Dispatch from its approved web address and try again.");
+  }
   if (!response.ok) {
     let message = `Upload failed (${response.status})`;
     try {
@@ -1140,8 +1147,11 @@ Saujana Film Lab Bali`;
   const unresolvedRollCount = namedRolls.filter((roll,index)=>
     !excludedRolls.includes(index) && !contactSheets.some(sheet=>sheet.rollIndex===index && sheet.filmName===roll)
   ).length;
-  const canGen = requiredDetailsReady && (skipContactSheets || everyRollResolved);
-  const publishHint = !requiredDetailsReady
+  const isFilePreview = window.location.protocol === "file:";
+  const canGen = !isFilePreview && requiredDetailsReady && (skipContactSheets || everyRollResolved);
+  const publishHint = isFilePreview
+    ? "Local file mode cannot upload. Open http://127.0.0.1:4174 to test publishing."
+    : !requiredDetailsReady
     ? "Complete the order number, customer, film roll, and Drive link first."
     : (!skipContactSheets && !everyRollResolved)
       ? `Prepare or skip ${unresolvedRollCount} remaining roll${unresolvedRollCount===1?"":"s"}.`
@@ -1222,8 +1232,8 @@ Saujana Film Lab Bali`;
           {guidelinesOpen && <div className="dispatch-flow" aria-label="Order guidelines">
             <div className="dispatch-flow-step"><strong>01</strong><span>Fill the form as usual: name, email, Drive link, and roll details.</span></div>
             <div className="dispatch-flow-step"><strong>02</strong><span>Add scans on the right.</span></div>
-            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare & export.</span></div>
-            <div className="dispatch-flow-step"><strong>04</strong><span>Publish & generate delivery link.</span></div>
+            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare each contact-sheet pair and review the previews.</span></div>
+            <div className="dispatch-flow-step"><strong>04</strong><span>Publish once to upload the selected pairs and generate the delivery link.</span></div>
           </div>}
 
           {/* Order number */}

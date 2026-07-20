@@ -497,7 +497,7 @@ async function createLocalDeliveryPreview({customerName,orderNumber,driveLink,fi
     const baseName = safeFileName(sheet.filmName);
     return `
     <article class="slide${index===0?" active":""}">
-      <img src="${sheet.imageUrl}" alt="${escapePreviewHtml(sheet.filmName)} contact sheet">
+      <picture><source media="(max-width: 760px)" srcset="${sheet.storyUrl}"><img src="${sheet.imageUrl}" alt="${escapePreviewHtml(sheet.filmName)} contact sheet"></picture>
       <div class="caption"><strong>${escapePreviewHtml(sheet.filmName)}</strong><span>${Number(sheet.frameCount)||0} frames</span></div>
       <div class="sheet-actions">
         <a class="sheet-button" href="${sheet.imageUrl}" download="${escapePreviewHtml(baseName)}_contact-4x3.jpg"><img class="button-image-icon button-image-icon--light" src="${contactDownloadIcon}" alt="" aria-hidden="true"><span>Download contact sheet</span></a>

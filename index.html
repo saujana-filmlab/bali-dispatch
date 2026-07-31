@@ -246,14 +246,12 @@ input,textarea{
 const { useState, useEffect, useRef, useCallback } = React;
 
 const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
-const API_TIMEOUT_MS = 9000;
 const BASE_URL = "https://bali-scans.saujanalab.com";
 const AUTH_SESSION_KEY = "saujana-auth";
 const ADMIN_KEY_SESSION_KEY = "saujana-contact-sheets-admin-key";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
 const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
 const STOCK_HISTORY_CACHE_KEY = "saujana-stock-history-cache-v1";
-const INITIAL_DATA_UNAVAILABLE_KEY = "saujana-initial-data-unavailable-v1";
 
 function readDispatchCache() {
   try {
@@ -319,15 +317,6 @@ async function apiCall(action, data=null) {
       };
     }
     const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
-    const fetchWithTimeout = async (endpoint, options={}) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-      try {
-        return await fetch(endpoint, {...options, signal: controller.signal});
-      } finally {
-        clearTimeout(timer);
-      }
-    };
     const readJson = async response => {
       const text = await response.text();
       try {
@@ -341,7 +330,7 @@ async function apiCall(action, data=null) {
     };
 
     if (data) {
-      const r = await fetchWithTimeout(url, {
+      const r = await fetch(url, {
         method: "POST", 
         redirect: "follow",
         cache: "no-store",
@@ -355,18 +344,18 @@ async function apiCall(action, data=null) {
 
     let r;
     try {
-      r = await fetchWithTimeout(url, {
+      r = await fetch(url, {
         method: "GET",
         redirect: "follow",
         cache: "no-store"
       });
       const result = await readJson(r);
-      return result;
+      if (!result?.error) return result;
     } catch (getErr) {
       console.warn("GET API failed, retrying as POST:", getErr);
     }
 
-    r = await fetchWithTimeout(url, {
+    r = await fetch(url, {
       method: "POST",
       redirect: "follow",
       cache: "no-store",
@@ -470,9 +459,33 @@ const deliveryUrl = o => {
   const film     = (o.deliveryFilm || o.film || "").toString();
   const link     = (o.driveLink || "").toString();
   const sheetMode = Array.isArray(o.contactSheets) ? (o.contactSheets.length ? "1" : "0") : "";
+  const deliveryTheme = normalizeDeliveryTheme(o.deliveryTheme);
+  const deliveryDate = String(o.deliveryDate || baliDeliveryDate());
   // Notes excluded from URL — fetched from Sheets by delivery page
-  return `${BASE_URL}/?order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}`;
+  return `${BASE_URL}/?theme=bali&negative=${encodeURIComponent(deliveryTheme)}&date=${encodeURIComponent(deliveryDate)}&order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}`;
 };
+
+const DELIVERY_THEME_OPTIONS = [
+  {value:"colour", label:"Colour Negative", accent:"#ff6425", paper:"#f3c3a2", surface:"#180b06"},
+  {value:"bw", label:"Black & White", accent:"#eeeae2", paper:"#f3f1eb", surface:"#111111"},
+  {value:"classic", label:"Classic", accent:"#c9a15c", paper:"#ece7db", surface:"#111315"}
+];
+
+function normalizeDeliveryTheme(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "bw" || normalized === "classic" ? normalized : "colour";
+}
+
+function baliDeliveryDate(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Asia/Makassar",
+    year:"numeric",
+    month:"2-digit",
+    day:"2-digit"
+  }).formatToParts(value);
+  const fields = Object.fromEntries(parts.map(part=>[part.type,part.value]));
+  return `${fields.year}-${fields.month}-${fields.day}`;
+}
 
 function compactRollDetails(values) {
   const rolls = (values || []).map(value=>String(value || "").trim()).filter(Boolean);
@@ -621,6 +634,72 @@ function Toast({msg}) {
   ) : null;
 }
 
+function DeliveryThemePreview({
+  theme,
+  customerName,
+  orderNumber,
+  sheets,
+  activeSheet,
+  previewRoll,
+  setPreviewRoll,
+  driveLink
+}) {
+  return (
+    <div style={css.card}>
+      <span style={css.secLabel}>Live Delivery Theme Preview</span>
+      <div style={{
+        background:theme.surface,
+        border:`1px solid ${theme.accent}55`,
+        padding:18,
+        backgroundImage:`radial-gradient(circle,${theme.accent}20 0 1px,transparent 1.2px)`,
+        backgroundSize:"16px 16px",
+        transition:"background .2s ease,border-color .2s ease"
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:14,alignItems:"flex-end",marginBottom:15}}>
+          <div>
+            <div style={{fontFamily:"'Helvetica Neue',Arial,sans-serif",fontSize:24,fontWeight:800,lineHeight:.95,textTransform:"uppercase",color:theme.accent}}>Your scans are ready,</div>
+            <div style={{fontFamily:"'Helvetica Neue',Arial,sans-serif",fontSize:19,fontWeight:800,textTransform:"uppercase",color:theme.paper,marginTop:5}}>{customerName || "Customer Name"}</div>
+            <div style={{fontSize:8,color:theme.paper,opacity:.62,marginTop:6,letterSpacing:".12em"}}>ORDER {orderNumber || "0000000"}</div>
+          </div>
+          <span style={{fontSize:8,color:theme.accent,letterSpacing:".16em",textTransform:"uppercase",textAlign:"right"}}>{theme.label}<br/>Saujana Film Lab Bali</span>
+        </div>
+        {activeSheet ? (
+          <div>
+            <div style={{position:"relative"}}>
+              <img src={activeSheet.deliveryPreviewUrl} alt={`${activeSheet.filmName} contact sheet`} style={{display:"block",width:"100%",height:"auto",border:`1px solid ${theme.accent}55`}}/>
+              {sheets.length>1 && <>
+                <button onClick={()=>setPreviewRoll(index=>(index-1+sheets.length)%sheets.length)} aria-label="Previous roll" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>‹</button>
+                <button onClick={()=>setPreviewRoll(index=>(index+1)%sheets.length)} aria-label="Next roll" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>›</button>
+              </>}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:7,fontSize:8,color:theme.paper,opacity:.65,textTransform:"uppercase",letterSpacing:".1em"}}>
+              <span>{activeSheet.filmName}</span>
+              <span>{activeSheet.frameCount} frames</span>
+            </div>
+            {sheets.length>1 && <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:10}}>{sheets.map((sheet,index)=><button key={sheet.rollKey || `${sheet.rollIndex}-${index}`} onClick={()=>setPreviewRoll(index)} aria-label={`Show roll ${index+1}`} style={{width:7,height:7,padding:0,border:0,borderRadius:"50%",background:index===previewRoll?theme.accent:"#4b4b4b"}}/>)}</div>}
+          </div>
+        ) : (
+          <div style={{padding:"26px 14px",border:`1px dashed ${theme.accent}55`,textAlign:"center",fontSize:9,color:theme.paper,opacity:.62}}>
+            Contact-sheet preview will appear here when included.
+          </div>
+        )}
+        {driveLink ? (
+          <a href={driveLink} target="_blank" rel="noopener" style={{display:"block",marginTop:15,padding:"12px 14px",background:theme.accent,color:theme.surface,textAlign:"center",fontSize:9,fontWeight:800,letterSpacing:".13em",textTransform:"uppercase"}}>
+            Download full-resolution scans ↗
+          </a>
+        ) : (
+          <div style={{display:"block",marginTop:15,padding:"12px 14px",background:theme.accent,color:theme.surface,textAlign:"center",fontSize:9,fontWeight:800,letterSpacing:".13em",textTransform:"uppercase",opacity:.72}}>
+            Download full-resolution scans
+          </div>
+        )}
+      </div>
+      <div style={{fontSize:8,color:"var(--dim)",lineHeight:1.55,marginTop:8}}>
+        Changes instantly as you select a delivery theme. Nothing is published from this preview.
+      </div>
+    </div>
+  );
+}
+
 function LockScreen({onUnlock}) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -753,6 +832,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [showDeliveryName, setShowDeliveryName] = useState(false);
   const [rolls, setRolls]         = useState([""]);
   const [deliveryRollDetails, setDeliveryRollDetails] = useState("");
+  const [deliveryTheme, setDeliveryTheme] = useState("colour");
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
   const [result, setResult]       = useState(null);
@@ -780,6 +860,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setShowDeliveryName(false);
     setRolls([""]);
     setDeliveryRollDetails("");
+    setDeliveryTheme("colour");
     setDriveLink("");
     setNotes("");
     if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
@@ -1004,6 +1085,8 @@ function addRoll() {
       customerName: name,
       film,
       deliveryFilm,
+      deliveryTheme: normalizeDeliveryTheme(deliveryTheme),
+      deliveryDate: baliDeliveryDate(),
       notes: notes.trim(),
       driveLink: driveLink.trim()
     };
@@ -1071,17 +1154,22 @@ function addRoll() {
       const shortUrl = longUrl;
       onOrderSaved({...(completed.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
-      const previewUrl = await createLocalDeliveryPreview({
-        customerName:name,
-        orderNumber:deliveryOrder.orderNumber,
-        driveLink:deliveryOrder.driveLink,
-        film:deliveryOrder.deliveryFilm,
-        notes:deliveryOrder.notes,
-        contactSheets:sheetsForDelivery
-      });
+      const previewUrl = longUrl;
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
       setPreviewRoll(0);
-      setResult({url:longUrl,shortUrl,previewUrl,custName:name,orderNumber:deliveryOrder.orderNumber,film:deliveryFilm,notes:deliveryOrder.notes,contactSheets:sheetsForDelivery,driveLink:deliveryOrder.driveLink});
+      setResult({
+        url:longUrl,
+        shortUrl,
+        previewUrl,
+        custName:name,
+        orderNumber:deliveryOrder.orderNumber,
+        film:deliveryFilm,
+        notes:deliveryOrder.notes,
+        contactSheets:sheetsForDelivery,
+        driveLink:deliveryOrder.driveLink,
+        deliveryTheme:deliveryOrder.deliveryTheme,
+        deliveryDate:deliveryOrder.deliveryDate
+      });
       setCopied({});
       showToast(sheetsForDelivery.length ? "Contact sheets uploaded and delivery link ready ✓" : "Order saved without contact sheets ✓");
     } catch(error) {
@@ -1192,8 +1280,15 @@ Saujana Film Lab Bali`;
       : skipContactSheets
         ? "Ready to publish without contact sheets."
         : "Every roll is prepared or intentionally skipped. Ready to publish."
-  const previewSheets = result?.contactSheets || [];
+  const previewSheets = result?.contactSheets || (skipContactSheets ? [] : contactSheets
+    .filter(sheet=>!excludedRolls.includes(sheet.rollIndex))
+    .sort((a,b)=>a.rollIndex-b.rollIndex));
   const activePreviewSheet = previewSheets.length ? previewSheets[Math.min(previewRoll,previewSheets.length-1)] : null;
+  const previewThemeValue = normalizeDeliveryTheme(deliveryTheme);
+  const previewTheme = DELIVERY_THEME_OPTIONS.find(option=>option.value===previewThemeValue) || DELIVERY_THEME_OPTIONS[0];
+  const previewCustomerName = result?.custName || contactSheetCustomerName || "Customer Name";
+  const previewOrderNumber = result?.orderNumber || cleanOrderNumber(orderNo) || "0000000";
+  const previewDriveLink = result?.driveLink || driveLink;
   const hasOrderSearch = orderSearch.trim().length > 0;
   const pastOrders = orders
     .filter(o=>o.driveLink)
@@ -1228,6 +1323,7 @@ Saujana Film Lab Bali`;
     setRolls(rollsArray);
     const pastDeliveryFilm = compactRollDetails(rollsArray);
     setDeliveryRollDetails("");
+    setDeliveryTheme(normalizeDeliveryTheme(o.deliveryTheme));
     contactSheets.forEach(sheet=>{
       if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
       if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
@@ -1240,14 +1336,25 @@ Saujana Film Lab Bali`;
     setNotes(o.notes || "");
     
     // 3. Update result UI
-    const longUrl = deliveryUrl({...o,deliveryFilm:pastDeliveryFilm});
+    const pastDeliveryTheme = normalizeDeliveryTheme(o.deliveryTheme);
+    const pastDeliveryDate = String(o.deliveryDate || baliDeliveryDate());
+    const longUrl = deliveryUrl({
+      ...o,
+      deliveryFilm:pastDeliveryFilm,
+      deliveryTheme:pastDeliveryTheme,
+      deliveryDate:pastDeliveryDate
+    });
     setResult({
         url: longUrl, 
         shortUrl: longUrl, 
+        previewUrl: longUrl,
         custName: o.customerName || "Customer", 
         orderNumber: o.orderNumber || "",
         film: pastDeliveryFilm,
-        notes: o.notes || ""
+        notes: o.notes || "",
+        driveLink:o.driveLink || "",
+        deliveryTheme:pastDeliveryTheme,
+        deliveryDate:pastDeliveryDate
     });
     
     setCopied({});
@@ -1268,8 +1375,8 @@ Saujana Film Lab Bali`;
           {guidelinesOpen && <div className="dispatch-flow" aria-label="Order guidelines">
             <div className="dispatch-flow-step"><strong>01</strong><span>Fill the form as usual: name, email, Drive link, and roll details.</span></div>
             <div className="dispatch-flow-step"><strong>02</strong><span>Add scans on the right.</span></div>
-            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare each contact-sheet pair and review the previews.</span></div>
-            <div className="dispatch-flow-step"><strong>04</strong><span>Publish once to upload the selected pairs and generate the delivery link.</span></div>
+            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare each contact sheet and review the previews.</span></div>
+            <div className="dispatch-flow-step"><strong>04</strong><span>Publish and generate the delivery link.</span></div>
           </div>}
 
           {/* Order number */}
@@ -1512,6 +1619,44 @@ Saujana Film Lab Bali`;
             </div>
           </div>
 
+          <div style={{marginBottom:24}}>
+            <label style={css.label}>Delivery Theme</label>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:7}}>
+              {DELIVERY_THEME_OPTIONS.map(option=>{
+                const selected = deliveryTheme===option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={()=>setDeliveryTheme(option.value)}
+                    style={{
+                      padding:"0 0 11px",
+                      overflow:"hidden",
+                      background:selected?option.surface:"var(--dark)",
+                      border:`1px solid ${selected?option.accent:"var(--border)"}`,
+                      color:selected?option.paper:"var(--muted)",
+                      fontFamily:"'Montserrat',sans-serif",
+                      fontSize:8,
+                      fontWeight:selected?700:500,
+                      letterSpacing:".08em",
+                      lineHeight:1.35,
+                      textTransform:"uppercase",
+                      cursor:"pointer",
+                      transition:"border-color .18s ease,background .18s ease,color .18s ease"
+                    }}
+                  >
+                    <span aria-hidden="true" style={{display:"block",height:5,marginBottom:10,background:option.accent}}/>
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{fontSize:8.5,color:"var(--dim)",lineHeight:1.55,marginTop:7}}>
+              Sets the customer delivery page look.
+            </div>
+          </div>
+
          {/* Google Drive Link Block */}
 <div style={{marginBottom: 24}}>
   <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8}}>
@@ -1613,10 +1758,20 @@ Saujana Film Lab Bali`;
             {skipContactSheets
               ? "Contact sheets are switched off for this delivery."
               : contactSheets.length
-              ? `${contactSheets.length} contact-sheet pair${contactSheets.length===1?"":"s"} prepared${excludedRolls.length?` · ${excludedRolls.length} roll${excludedRolls.length===1?"":"s"} skipped`:""}: ${contactSheets.map(sheet=>sheet.filmName).join(", ")}.`
+              ? `${contactSheets.length} contact sheet${contactSheets.length===1?"":"s"} prepared${excludedRolls.length?` · ${excludedRolls.length} roll${excludedRolls.length===1?"":"s"} skipped`:""}: ${contactSheets.map(sheet=>sheet.filmName).join(", ")}.`
               : "Optional. Orders with fewer than 10 usable frames can continue without a contact sheet."}
           </div>
         </div>
+        <DeliveryThemePreview
+          theme={previewTheme}
+          customerName={previewCustomerName}
+          orderNumber={previewOrderNumber}
+          sheets={previewSheets}
+          activeSheet={activePreviewSheet}
+          previewRoll={previewRoll}
+          setPreviewRoll={setPreviewRoll}
+          driveLink={previewDriveLink}
+        />
         {result ? (
           <>
             <div style={css.card}>
@@ -1663,43 +1818,7 @@ Saujana Film Lab Bali`;
                 <a className="readable-link" href={result.previewUrl || result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
                   Preview Delivery Page ↗
                 </a>
-                {!API && <div style={{fontSize:8,color:"var(--dim)",lineHeight:1.6,marginTop:8}}>The beta preview includes the contact sheets locally. The customer-share link will include them once storage is connected.</div>}
-              </div>
-            </div>
-
-            <div style={css.card}>
-              <span style={css.secLabel}>Customer Delivery Preview</span>
-              <div style={{background:"#070707",border:"1px solid var(--border)",padding:18}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:14,alignItems:"flex-end",marginBottom:15}}>
-                  <div>
-                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:24,fontStyle:"italic",color:"#fff"}}>Your scans are ready</div>
-                    <div style={{fontSize:9,color:"#83909c",marginTop:4}}>{result.custName} · Order {result.orderNumber}</div>
-                  </div>
-                  <span style={{fontSize:8,color:"#c8922a",letterSpacing:".18em",textTransform:"uppercase"}}>Saujana Film Lab Bali</span>
-                </div>
-                {activePreviewSheet ? (
-                  <div>
-                    <div style={{position:"relative"}}>
-                      <img src={activePreviewSheet.deliveryPreviewUrl} alt={`${activePreviewSheet.filmName} contact sheet`} style={{display:"block",width:"100%",height:"auto",border:"1px solid #222"}}/>
-                      {previewSheets.length>1 && <>
-                        <button onClick={()=>setPreviewRoll(index=>(index-1+previewSheets.length)%previewSheets.length)} aria-label="Previous roll" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>‹</button>
-                        <button onClick={()=>setPreviewRoll(index=>(index+1)%previewSheets.length)} aria-label="Next roll" style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",width:34,height:44,border:"1px solid #555",background:"rgba(0,0,0,.78)",color:"#fff",fontSize:22}}>›</button>
-                      </>}
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:7,fontSize:8,color:"#83909c",textTransform:"uppercase",letterSpacing:".1em"}}>
-                      <span>{activePreviewSheet.filmName}</span>
-                      <span>{activePreviewSheet.frameCount} frames</span>
-                    </div>
-                    {previewSheets.length>1 && <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:10}}>{previewSheets.map((sheet,index)=><button key={sheet.rollKey} onClick={()=>setPreviewRoll(index)} aria-label={`Show roll ${index+1}`} style={{width:7,height:7,padding:0,border:0,borderRadius:"50%",background:index===previewRoll?"#c8922a":"#4b4b4b"}}/>)}</div>}
-                  </div>
-                ) : (
-                  <div style={{padding:"26px 14px",border:"1px dashed #27313a",textAlign:"center",fontSize:9,color:"#66727d"}}>
-                    No contact sheet included for this delivery.
-                  </div>
-                )}
-                <a href={result.driveLink} target="_blank" rel="noopener" style={{display:"block",marginTop:15,padding:"12px 14px",background:"#c8922a",color:"#111",textAlign:"center",fontSize:9,fontWeight:700,letterSpacing:".13em",textTransform:"uppercase"}}>
-                  Download full-resolution scans ↗
-                </a>
+                <div style={{fontSize:8,color:"var(--dim)",lineHeight:1.6,marginTop:8}}>This opens the same themed page the customer receives.</div>
               </div>
             </div>
 
@@ -2109,6 +2228,7 @@ function App() {
   const [tab, setTab]             = useState("dispatch");
   const [customers, setCustomers] = useState(cachedDispatch?.customers || []);
   const [orders, setOrders]       = useState(cachedDispatch?.orders || []);
+  const [loading, setLoading]     = useState(!cachedDispatch);
   const [syncing, setSyncing]     = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
   const [prefill, setPrefill]     = useState(null);
@@ -2120,16 +2240,12 @@ function App() {
     document.body.setAttribute("data-theme", theme === "day" ? "light" : "dark");
   }, [theme]);
 
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   async function loadSheetData() {
-    if (sessionStorage.getItem(INITIAL_DATA_UNAVAILABLE_KEY) !== "1") {
-      const combined = await apiCall("getInitialData");
-      if (combined && Array.isArray(combined.customers) && Array.isArray(combined.orders)) {
-        return [combined.customers, restoreOrderNumbers(combined.orders)];
-      }
-      if (combined?.error && String(combined.error).toLowerCase().includes("unknown action")) {
-        sessionStorage.setItem(INITIAL_DATA_UNAVAILABLE_KEY, "1");
-      }
+    const combined = await apiCall("getInitialData");
+    if (combined && Array.isArray(combined.customers) && Array.isArray(combined.orders)) {
+      return [combined.customers, restoreOrderNumbers(combined.orders)];
     }
 
     const [c, o] = await Promise.all([
@@ -2146,18 +2262,27 @@ function App() {
 
   async function load() {
     if (!API) {
+      setLoading(false);
       setSyncing(false);
       setRefreshStatus("");
       setLoadError("");
       return;
     }
+    setLoading(customers.length === 0 && orders.length === 0);
     setSyncing(true);
     setRefreshStatus("working");
     setLoadError("");
     let ok = false;
 
     try {
-      const [c, o] = await loadSheetData();
+      let c, o;
+      try {
+        [c, o] = await loadSheetData();
+      } catch (firstErr) {
+        console.warn("LOAD RETRY:", firstErr);
+        await wait(1800);
+        [c, o] = await loadSheetData();
+      }
 
       console.log("CUSTOMERS API:", c);
 
@@ -2169,6 +2294,7 @@ function App() {
       console.error("LOAD ERROR:", err);
       setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then reopen the app.`);
     } finally {
+      setLoading(false);
       setSyncing(false);
       if (ok) {
         setRefreshStatus("done");
@@ -2311,7 +2437,12 @@ function App() {
             {loadError}
           </div>
         )}
-        {tab==="dispatch" ? (
+        {loading ? (
+          <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
+                       textTransform:"uppercase",color:"var(--dim)"}}>
+            Connecting to Google Sheets...
+          </div>
+        ) : tab==="dispatch" ? (
           <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
             prefill={prefill} clearPrefill={()=>setPrefill(null)} resetSignal={newOrderSignal}/>
         ) : tab==="registry" ? (
@@ -2362,7 +2493,8 @@ const DEFAULT_STOCK = [
 // ── STOCK TRACKER COMPONENT ───────────────────────────────
 function StockTracker() {
   const cachedStock = readStockCache();
-  const [stock, setStock]         = useState(cachedStock?.stock || DEFAULT_STOCK);
+  const [stock, setStock]         = useState(cachedStock?.stock || []);
+  const [loading, setLoading]     = useState(!cachedStock);
   const [refreshing, setRefreshing] = useState(false);
   const [stockRefreshStatus, setStockRefreshStatus] = useState("");
   const [saving, setSaving]       = useState(false);
@@ -2486,6 +2618,7 @@ function StockTracker() {
   }
 
   async function loadStock() {
+    setLoading(stock.length === 0);
     setRefreshing(true);
     setStockRefreshStatus("working");
     let ok = false;
@@ -2502,6 +2635,7 @@ function StockTracker() {
     } catch(e) {
       if (stock.length === 0) setStock(normalizeStock(DEFAULT_STOCK));
     }
+    setLoading(false);
     setRefreshing(false);
     if (ok) {
       setStockRefreshStatus("done");
@@ -2687,6 +2821,10 @@ function StockTracker() {
     });
   }
 
+  if (loading) return (
+    <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
+                 textTransform:"uppercase",color:"var(--dim)"}}>Loading stock...</div>
+  );
 
   return (
     <div style={{maxWidth:900,margin:"0 auto"}}>

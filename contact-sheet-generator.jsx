@@ -361,7 +361,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
     try {
       const deliveryBlob = await csgCanvasBlob(deliveryRef.current);
       const storyBlob = await csgCanvasBlob(storyRef.current);
-      setProgress("Pair ready for delivery");
+      setProgress("Contact sheet ready for delivery");
       if (onSheetsChange) onSheetsChange({
         ready:true,
         rollIndex:selectedRoll,
@@ -393,7 +393,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       .csg-shell.embedded{max-width:none}.csg-shell.embedded .csg-title{margin-bottom:14px}.csg-shell.embedded .csg-title h1{font-size:17px}.csg-shell.embedded .csg-layout{grid-template-columns:270px 1fr;gap:18px}.csg-shell.embedded .csg-panel{padding:18px}.csg-shell.embedded .csg-stage{height:500px}.csg-shell.embedded .csg-label{font-size:9px}.csg-shell.embedded .csg-choice{font-size:10px}.csg-shell.embedded .csg-check{font-size:11px}.csg-shell.embedded .csg-help,.csg-shell.embedded .csg-status,.csg-shell.embedded .csg-export small{font-size:10px}.csg-shell.embedded .csg-tabs button,.csg-shell.embedded .csg-tabs span{font-size:9px}
       @media(max-width:800px){.csg-layout,.csg-shell.embedded .csg-layout{grid-template-columns:1fr}.csg-stage{height:390px}.csg-title{align-items:flex-start;gap:12px}}
     `}</style>
-    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Uses the customer and film-roll data above${orderNumber ? ` · Order ${orderNumber}` : ""}.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div><span className="csg-local">Original scans stay local</span></div>
+    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Your order details are ready${orderNumber ? ` · Order ${orderNumber}` : ""}. Add the scans and let Rollo handle the tiny frames.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div><span className="csg-local">Rollo is on contact-sheet duty</span></div>
     <div className="csg-layout">
       <aside className="csg-panel">
         {availableRolls.length > 1 && <><label className="csg-label">Film roll</label><select value={selectedRoll} disabled={working} onChange={e=>chooseLinkedRoll(Number(e.target.value))}>{availableRolls.map((roll,index)=><option key={`${roll}-${index}`} value={index}>{`Roll ${index+1} · ${roll}`}</option>)}</select></>}
@@ -419,7 +419,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
             <canvas ref={deliveryRef} className={active==="delivery"&&frames.length?"":"hidden"}/>
             <canvas ref={storyRef} className={active==="story"&&frames.length?"":"hidden"}/>
           </div>
-          <div className="csg-export"><small>Prepare this pair for the delivery preview. It uploads to R2 only when you publish; nothing is downloaded here.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working} onClick={preparePair}>Prepare pair</button></div>
+          <div className="csg-export"><small>Add the photos or folder for the delivery preview.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working} onClick={preparePair}>Prepare contact sheet</button></div>
         </div>
       </section>
     </div>

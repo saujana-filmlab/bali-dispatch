@@ -11,150 +11,246 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <style>
-    *{box-sizing:border-box;margin:0;padding:0}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#0b0d10;
-      --panel:#111720;
-      --panel2:#151d29;
-      --border:#253448;
-      --text:#f4f6fa;
-      --soft:#c8d4e0;
-      --muted:#697b8a;
-      --dim:#354454;
-      --gold:#f4c542;
-      --gold2:#c89516;
-      --red:#e05040;
-      --green:#58d68d;
+      --black:#0a0a0a;
+      --off-black:#111111;
+      --dark:#1a1a1a;
+      --mid:#2e2e2e;
+      --dim:#555555;
+      --muted:#888888;
+      --light:#c8c8c8;
+      --off-white:#eeece8;
+      --white:#fafaf8;
+      --paper:#ece7db;
+      --gold:#c9a15c;
+      --gold-bright:#e5c06f;
+      --red:#d86252;
+      --green:#8dcc9a;
+      --grain-opacity:.045;
     }
     body[data-theme="light"]{
-      --bg:#f5f3ee;
-      --panel:#ffffff;
-      --panel2:#f0ece4;
-      --border:#d8d0c3;
-      --text:#171a20;
-      --soft:#35404a;
-      --muted:#6c756f;
-      --dim:#a99f91;
-      --gold:#f4c542;
-      --gold2:#c89516;
-      --red:#c83f32;
-      --green:#128a43;
+      --black:#f5f1e8;
+      --off-black:#fffaf0;
+      --dark:#ece3d5;
+      --mid:#d6c8b7;
+      --dim:#9f8f7b;
+      --muted:#6d6258;
+      --light:#2d2925;
+      --off-white:#1d1a17;
+      --white:#0f0e0c;
+      --paper:#fff7e8;
+      --gold:#b5832c;
+      --gold-bright:#c9952f;
+      --red:#b94235;
+      --green:#2b7a46;
+      --grain-opacity:.028;
     }
     body{
       min-height:100vh;
-      background:
-        radial-gradient(circle at 20% 0%,rgba(244,197,66,0.09),transparent 32%),
-        linear-gradient(180deg,#0f141b 0%,var(--bg) 62%);
-      color:var(--text);
+      background:var(--black);
+      color:var(--off-white);
       font-family:'Montserrat',sans-serif;
       font-weight:300;
-      padding:22px;
+      overflow-x:hidden;
       transition:background .2s,color .2s;
     }
-    body[data-theme="light"]{
-      background:
-        radial-gradient(circle at 20% 0%,rgba(244,197,66,0.18),transparent 32%),
-        linear-gradient(180deg,#ffffff 0%,var(--bg) 70%);
+    body::before{
+      content:'';
+      position:fixed;
+      inset:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      opacity:var(--grain-opacity);
+      pointer-events:none;
+      z-index:100;
     }
     button,input{font-family:'Montserrat',sans-serif}
-    .wrap{
-      min-height:calc(100vh - 44px);
+    .sprocket-strip{
+      width:100%;
+      height:36px;
+      background:var(--off-black);
+      border-bottom:1px solid var(--mid);
       display:flex;
       align-items:center;
-      justify-content:center;
+      padding:0 24px;
+      overflow:hidden;
+      position:relative;
     }
-    .card{
-      width:100%;
-      max-width:460px;
-      background:rgba(17,23,32,0.94);
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:28px;
-      box-shadow:0 20px 60px rgba(0,0,0,0.35);
+    .sprocket-strip::after{
+      content:'';
+      position:absolute;
+      left:0;
+      right:0;
+      bottom:0;
+      height:1px;
+      background:linear-gradient(90deg,transparent,var(--mid) 20%,var(--mid) 80%,transparent);
     }
-    body[data-theme="light"] .card{
-      background:rgba(255,255,255,0.96);
-      box-shadow:0 18px 42px rgba(64,52,35,0.14);
+    .sprocket-hole{
+      width:18px;
+      height:22px;
+      border:1.5px solid var(--mid);
+      border-radius:3px;
+      margin-right:28px;
+      flex-shrink:0;
+      opacity:.62;
     }
-    .logo{
-      width:100%;
-      max-width:260px;
-      display:block;
-      margin:0 auto 22px;
+    .frame-counter{
+      position:absolute;
+      right:24px;
+      color:var(--dim);
+      font-size:9px;
+      letter-spacing:.2em;
     }
-    body[data-theme="light"] .logo{filter:invert(1) contrast(1.15)}
     .theme-toggle{
       position:fixed;
-      top:18px;
+      top:52px;
       right:18px;
       z-index:20;
-      border:1px solid var(--border);
-      border-radius:4px;
-      background:var(--panel2);
-      color:var(--soft);
+      border:1px solid var(--mid);
+      border-radius:2px;
+      background:var(--off-black);
+      color:var(--light);
       cursor:pointer;
-      font-size:10px;
-      font-weight:700;
-      letter-spacing:0.16em;
-      padding:9px 11px;
+      font-size:9px;
+      font-weight:500;
+      letter-spacing:.16em;
+      padding:8px 10px;
       text-transform:uppercase;
     }
+    .page{
+      width:100%;
+      max-width:620px;
+      margin:0 auto;
+      padding:54px 28px 64px;
+    }
+    .header{
+      text-align:center;
+      margin-bottom:36px;
+      opacity:0;
+      animation:fadeUp .9s ease .05s forwards;
+    }
+    .logo{
+      width:215px;
+      max-width:74vw;
+      display:block;
+      margin:0 auto 28px;
+      opacity:.95;
+    }
+    body[data-theme="light"] .logo{filter:invert(1) contrast(1.1)}
     h1{
       font-family:'Cormorant Garamond',serif;
-      font-size:34px;
+      font-size:clamp(38px,9vw,56px);
       font-style:italic;
-      font-weight:400;
-      text-align:center;
+      font-weight:300;
+      line-height:1.05;
       margin-bottom:8px;
+      color:var(--white);
     }
     .sub{
       color:var(--muted);
       font-size:10px;
-      letter-spacing:0.28em;
+      letter-spacing:.35em;
       line-height:1.7;
       text-align:center;
       text-transform:uppercase;
+    }
+    .divider{
+      display:flex;
+      align-items:center;
+      gap:16px;
+      margin:0 0 30px;
+      opacity:0;
+      animation:fadeUp .9s ease .22s forwards;
+    }
+    .divider-line{
+      flex:1;
+      height:1px;
+      background:linear-gradient(90deg,transparent,var(--mid));
+    }
+    .divider-line:last-child{background:linear-gradient(90deg,var(--mid),transparent)}
+    .divider-icon{
+      color:var(--dim);
+      font-size:13px;
+      letter-spacing:.16em;
+    }
+    .form-panel{
+      background:var(--off-black);
+      border:1px solid var(--mid);
+      border-radius:2px;
+      padding:36px 34px 28px;
+      position:relative;
+      overflow:hidden;
+      opacity:0;
+      animation:fadeUp .9s ease .36s forwards;
+    }
+    .form-panel::before{
+      content:'';
+      position:absolute;
+      left:0;
+      right:0;
+      top:0;
+      height:1px;
+      background:linear-gradient(90deg,transparent,#4b4437,transparent);
+    }
+    .form-head{
       margin-bottom:26px;
+      text-align:center;
+    }
+    .eyebrow{
+      color:var(--gold-bright);
+      font-size:9px;
+      letter-spacing:.38em;
+      text-transform:uppercase;
+      margin-bottom:12px;
+    }
+    .form-title{
+      color:var(--white);
+      font-family:'Cormorant Garamond',serif;
+      font-size:31px;
+      font-style:italic;
+      font-weight:300;
+      line-height:1.15;
     }
     label{
       display:block;
       color:var(--muted);
       font-size:9px;
-      font-weight:600;
-      letter-spacing:0.26em;
+      font-weight:500;
+      letter-spacing:.28em;
       text-transform:uppercase;
       margin:0 0 8px;
     }
     .field{margin-bottom:18px}
     input{
       width:100%;
-      background:var(--bg);
-      border:1px solid var(--border);
-      border-radius:4px;
-      color:var(--text);
+      background:var(--black);
+      border:1px solid var(--mid);
+      border-radius:2px;
+      color:var(--white);
       font-size:16px;
       outline:none;
-      padding:14px 15px;
+      padding:15px 14px;
       transition:border-color .18s, box-shadow .18s;
     }
     input:focus{
-      border-color:var(--gold2);
-      box-shadow:0 0 0 3px rgba(244,197,66,0.12);
+      border-color:var(--gold);
+      box-shadow:0 0 0 3px rgba(201,161,92,.12);
     }
     input::placeholder{color:var(--dim)}
     .submit{
       width:100%;
-      border:1px solid var(--gold2);
-      border-radius:4px;
-      background:var(--gold);
-      color:#101010;
+      border:1px solid var(--gold);
+      border-radius:2px;
+      background:var(--paper);
+      color:#14110e;
       cursor:pointer;
-      font-size:11px;
-      font-weight:700;
-      letter-spacing:0.18em;
+      font-size:10px;
+      font-weight:600;
+      letter-spacing:.22em;
       padding:15px;
       text-transform:uppercase;
       transition:transform .16s, opacity .16s;
+      margin-top:4px;
     }
     .submit:active{transform:translateY(1px)}
     .submit:disabled{cursor:not-allowed;opacity:.55}
@@ -168,11 +264,15 @@
     .ok{color:var(--green)}
     .err{color:var(--red)}
     .foot{
-      margin-top:20px;
+      margin-top:18px;
       color:var(--dim);
       font-size:10px;
       line-height:1.7;
       text-align:center;
+    }
+    @keyframes fadeUp{
+      from{opacity:0;transform:translateY(16px)}
+      to{opacity:1;transform:translateY(0)}
     }
     .grain-burst{
       position:fixed;
@@ -205,6 +305,13 @@
       0%{opacity:0;transform:translate(0,0) scale(.4)}
       12%{opacity:1}
       100%{opacity:0;transform:translate(var(--x),var(--y)) scale(0)}
+    }
+    @media(max-width:560px){
+      .page{padding:40px 18px 50px}
+      .form-panel{padding:30px 20px 24px}
+      .theme-toggle{top:46px;right:12px;font-size:8px;padding:7px 8px}
+      .sprocket-strip{padding:0 16px}
+      .sprocket-hole{margin-right:22px}
     }
   </style>
 </head>
@@ -277,7 +384,12 @@
       }
 
       return (
-        <main className="wrap">
+        <>
+        <div className="sprocket-strip" aria-hidden="true">
+          {Array.from({length:18}).map((_, i)=><span key={i} className="sprocket-hole"></span>)}
+          <span className="frame-counter">SFL BALI / CUSTOMER</span>
+        </div>
+        <main className="page">
           <button
             type="button"
             className="theme-toggle"
@@ -306,10 +418,23 @@
               })}
             </div>
           )}
-          <form className="card" onSubmit={submit}>
-            <img className="logo" src="../dd-horizontal.png" alt="Saujana Darkroom Dispatch"/>
+          <header className="header">
+            <img className="logo" src="../saujana-white.png" alt="Saujana Film Lab Bali"/>
             <h1>Customer Details</h1>
             <div className="sub">Saujana Film Lab Bali</div>
+          </header>
+
+          <div className="divider" aria-hidden="true">
+            <span className="divider-line"></span>
+            <span className="divider-icon">SB</span>
+            <span className="divider-line"></span>
+          </div>
+
+          <form className="form-panel" onSubmit={submit}>
+            <div className="form-head">
+              <div className="eyebrow">Lab Order Entry</div>
+              <div className="form-title">Your film starts here.</div>
+            </div>
 
             <div className="field">
               <label>Name *</label>
@@ -353,10 +478,11 @@
             </div>
 
             <div className="foot">
-              This page only saves your details for lab order updates.
+              Details are saved directly to Saujana Film Lab Bali.
             </div>
           </form>
         </main>
+        </>
       );
     }
 

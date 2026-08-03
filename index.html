@@ -1102,57 +1102,62 @@ function addRoll() {
       if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
       rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
 
-      const uploadSession = await apiCall("beginContactSheetUpload", {
-        orderNumber:deliveryOrder.orderNumber,
-        adminKey:getContactSheetAdminKey()
-      });
-      if (!uploadSession?.uploadNonce) {
-        throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
-      }
-      uploadNonce = uploadSession.uploadNonce;
-
       const uploadedSheets = [];
-      for (let index=0;index<sheetsForDelivery.length;index+=1) {
-        const sheet = sheetsForDelivery[index];
-        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
-        const deliveryUrl = await uploadContactSheetVariant({
+      let completed = null;
+
+      if (sheetsForDelivery.length > 0) {
+        setPublishStage("Preparing contact-sheet upload");
+        const uploadSession = await apiCall("beginContactSheetUpload", {
+          orderNumber:deliveryOrder.orderNumber,
+          adminKey:getContactSheetAdminKey()
+        });
+        if (!uploadSession?.uploadNonce) {
+          throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
+        }
+        uploadNonce = uploadSession.uploadNonce;
+
+        for (let index=0;index<sheetsForDelivery.length;index+=1) {
+          const sheet = sheetsForDelivery[index];
+          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
+          const deliveryUrl = await uploadContactSheetVariant({
+            orderNumber:deliveryOrder.orderNumber,
+            uploadNonce,
+            sheet,
+            variant:"delivery"
+          });
+
+          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
+          const storyUrl = await uploadContactSheetVariant({
+            orderNumber:deliveryOrder.orderNumber,
+            uploadNonce,
+            sheet,
+            variant:"story"
+          });
+
+          uploadedSheets.push({
+            rollIndex:sheet.rollIndex,
+            filmName:sheet.filmName,
+            frameCount:sheet.frameCount,
+            scanStyle:normalizeScanStyle(sheet.scanStyle),
+            format:normalizeFrameFormat(sheet.format),
+            deliveryUrl,
+            storyUrl
+          });
+        }
+
+        setPublishStage("Publishing delivery page");
+        completed = await apiCall("completeContactSheetUpload", {
           orderNumber:deliveryOrder.orderNumber,
           uploadNonce,
-          sheet,
-          variant:"delivery"
+          contactSheets:uploadedSheets
         });
-
-        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
-        const storyUrl = await uploadContactSheetVariant({
-          orderNumber:deliveryOrder.orderNumber,
-          uploadNonce,
-          sheet,
-          variant:"story"
-        });
-
-        uploadedSheets.push({
-          rollIndex:sheet.rollIndex,
-          filmName:sheet.filmName,
-          frameCount:sheet.frameCount,
-          scanStyle:normalizeScanStyle(sheet.scanStyle),
-          format:normalizeFrameFormat(sheet.format),
-          deliveryUrl,
-          storyUrl
-        });
+        if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
+        uploadNonce = "";
       }
-
-      setPublishStage("Publishing delivery page");
-      const completed = await apiCall("completeContactSheetUpload", {
-        orderNumber:deliveryOrder.orderNumber,
-        uploadNonce,
-        contactSheets:uploadedSheets
-      });
-      if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
-      uploadNonce = "";
 
       const longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
       const shortUrl = longUrl;
-      onOrderSaved({...(completed.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
+      onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
       const previewUrl = longUrl;
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);

@@ -400,17 +400,25 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}
   try {
     response = await fetch(ticket.uploadUrl, {
       method:"PUT",
-      headers:{"Content-Type":"image/jpeg"},
+      headers:{
+        "Content-Type":"image/jpeg",
+        "Content-Range":`bytes 0-${blob.size - 1}/${blob.size}`
+      },
       body:blob
     });
   } catch(error) {
     throw new Error("Could not reach contact-sheet storage. Open Darkroom Dispatch from its approved web address and try again.");
   }
   if (!response.ok) {
-    let message = `Upload failed (${response.status})`;
+    let message = `Google upload failed (${response.status})`;
     try {
-      const result = await response.json();
-      if (result?.error) message = result.error;
+      const text = await response.text();
+      try {
+        const result = JSON.parse(text);
+        if (result?.error) message = result.error;
+      } catch(e) {
+        if (text) message = `Google upload failed (${response.status}): ${text.slice(0, 120)}`;
+      }
     } catch(e) {}
     throw new Error(message);
   }

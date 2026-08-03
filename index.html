@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -399,9 +400,8 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}
   try {
     response = await fetch(ticket.uploadUrl, {
       method:"PUT",
-      
-        "Content-Type":"image/jpeg",
-        
+      headers:{
+        "Content-Type":"image/jpeg"
       },
       body:blob
     });

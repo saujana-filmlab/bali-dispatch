@@ -270,6 +270,7 @@ const API_TIMEOUTS = {
   completeContactSheetUpload: 60000,
   cancelContactSheetUpload: 25000,
   saveStock: 35000,
+  finalizeStock: 45000,
   recordStockHistory: 35000
 };
 const API_RETRY_DELAYS = [600, 1600, 3600];
@@ -289,6 +290,7 @@ const API_RETRY_ACTIONS = new Set([
   "completeContactSheetUpload",
   "cancelContactSheetUpload",
   "saveStock",
+  "finalizeStock",
   "recordStockHistory"
 ]);
 
@@ -305,6 +307,13 @@ function shouldRetryApiResult(action, result) {
 
 function apiRetryDelay(attempt) {
   return new Promise(resolve => setTimeout(resolve, API_RETRY_DELAYS[Math.min(attempt, API_RETRY_DELAYS.length - 1)]));
+}
+
+function requireApiSuccess(result, fallbackMessage) {
+  if (!result || result.error || result.success === false) {
+    throw new Error(result?.error || fallbackMessage);
+  }
+  return result;
 }
 
 function readDispatchCache() {
@@ -2887,15 +2896,35 @@ function StockTracker() {
     setSaving(true);
     try {
       const finalizedStock = finalizeStock(stock);
-      const res = await apiCall("saveStock", {stock: finalizedStock});
-      const savedStock = markStockSaved(finalizedStock, res && res.timestamp);
+      const res = requireApiSuccess(await apiCall("saveStock", {stock: finalizedStock}), "Could not save stock");
+      const savedStock = markStockSaved(finalizedStock, res.timestamp);
       setStock(savedStock);
       writeStockCache(savedStock);
       showToast("Stock saved ✓");
     } catch(e) {
-      showToast("Save failed");
+      showToast(e?.message || "Save failed");
     }
     setSaving(false);
+  }
+
+  async function saveFinalizedStockWithHistory(beforeStock, finalizedStock, reportText) {
+    const combined = await apiCall("finalizeStock", {
+      action: "finalize",
+      beforeStock,
+      stock: finalizedStock,
+      afterStock: finalizedStock,
+      report: reportText
+    });
+
+    if (combined?.success) return combined;
+    const canFallback = /unknown action/i.test(String(combined?.error || ""));
+    if (!canFallback) {
+      throw new Error(combined?.error || "Could not save stock");
+    }
+
+    const saved = requireApiSuccess(await apiCall("saveStock", {stock: finalizedStock}), "Could not save stock");
+    await recordStockHistory(beforeStock, finalizedStock, reportText);
+    return saved;
   }
 
   async function finalizeAndGenerateReport() {
@@ -2903,15 +2932,20 @@ function StockTracker() {
     try {
       const reportText = buildReportText(stock);
       const finalizedStock = finalizeStock(stock);
-      await recordStockHistory(stock, finalizedStock, reportText);
-      const res = await apiCall("saveStock", {stock: finalizedStock});
-      const savedStock = markStockSaved(finalizedStock, res && res.timestamp);
+      const res = await saveFinalizedStockWithHistory(stock, finalizedStock, reportText);
+      const savedStock = markStockSaved(finalizedStock, res.timestamp);
       setStock(savedStock);
       writeStockCache(savedStock);
       setReport(reportText);
+      if (res.history) {
+        const nextLocalHistory = [res.history, ...readLocalStockHistory()].slice(0, 30);
+        writeLocalStockHistory(nextLocalHistory);
+        setStockHistory(nextLocalHistory);
+        setHistoryNotice("");
+      }
       showToast("Stock saved and report generated");
     } catch(e) {
-      showToast("Save failed");
+      showToast(e?.message || "Save failed");
     }
     setSaving(false);
   }
@@ -2997,16 +3031,15 @@ function StockTracker() {
   async function saveStockState(nextStock, successMessage) {
     setSaving(true);
     try {
-      const res = await apiCall("saveStock", {stock: nextStock});
-      if (res && res.error) throw new Error(res.error);
-      const savedStock = stampStockSaved(nextStock, res && res.timestamp);
+      const res = requireApiSuccess(await apiCall("saveStock", {stock: nextStock}), "Could not save stock");
+      const savedStock = stampStockSaved(nextStock, res.timestamp);
       setStock(savedStock);
       writeStockCache(savedStock);
       showToast(successMessage);
     } catch(e) {
       setStock(nextStock);
       writeStockCache(nextStock);
-      showToast("Saved locally. Sheets sync failed");
+      showToast(e?.message || "Saved locally. Sheets sync failed");
     }
     setSaving(false);
   }

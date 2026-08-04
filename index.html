@@ -272,9 +272,39 @@ const API_TIMEOUTS = {
   saveStock: 35000,
   recordStockHistory: 35000
 };
+const API_RETRY_DELAYS = [600, 1600, 3600];
+const API_RETRY_ACTIONS = new Set([
+  "getInitialData",
+  "getCustomers",
+  "getOrders",
+  "getOrderByNumber",
+  "getStock",
+  "getStockHistory",
+  "verifyContactSheetAdmin",
+  "addOrder",
+  "createFolder",
+  "beginContactSheetUpload",
+  "createContactSheetUploadTicket",
+  "createContactSheetUploadTickets",
+  "completeContactSheetUpload",
+  "cancelContactSheetUpload",
+  "saveStock",
+  "recordStockHistory"
+]);
 
 function apiTimeoutFor(action) {
   return API_TIMEOUTS[action] || API_TIMEOUTS.default;
+}
+
+function shouldRetryApiResult(action, result) {
+  if (!API_RETRY_ACTIONS.has(action) || !result) return false;
+  if (result.retryable === true) return true;
+  const status = Number(result.httpStatus || result.status || 0);
+  return status === 404 || status === 429 || status >= 500;
+}
+
+function apiRetryDelay(attempt) {
+  return new Promise(resolve => setTimeout(resolve, API_RETRY_DELAYS[Math.min(attempt, API_RETRY_DELAYS.length - 1)]));
 }
 
 function readDispatchCache() {
@@ -341,6 +371,7 @@ async function apiCall(action, data=null) {
       };
     }
     const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
+    const maxAttempts = API_RETRY_ACTIONS.has(action) ? API_RETRY_DELAYS.length + 1 : 1;
     const fetchWithTimeout = async (endpoint, options={}) => {
       const controller = new AbortController();
       const timeoutMs = apiTimeoutFor(action);
@@ -354,51 +385,79 @@ async function apiCall(action, data=null) {
     const readJson = async response => {
       const text = await response.text();
       try {
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        return response.ok ? parsed : {
+          ...parsed,
+          httpStatus: response.status,
+          retryable: response.status === 404 || response.status === 429 || response.status >= 500
+        };
       } catch (err) {
         return {
           error: `Google Sheets returned ${response.status || "a non-JSON response"} while running ${action}`,
-          detail: text.slice(0, 180)
+          detail: text.slice(0, 180),
+          httpStatus: response.status,
+          retryable: response.status === 404 || response.status === 429 || response.status >= 500
         };
       }
     };
 
-    if (data) {
-      const r = await fetchWithTimeout(url, {
-        method: "POST", 
+    const postJson = async body => {
+      const response = await fetchWithTimeout(url, {
+        method: "POST",
         redirect: "follow",
         cache: "no-store",
         headers: {
           "Content-Type": "text/plain;charset=utf-8"
         },
-        body: JSON.stringify(data)
+        body
       });
-      return await readJson(r);
+      return await readJson(response);
+    };
+
+    const runOnce = async () => {
+      if (data) return await postJson(JSON.stringify(data));
+
+      try {
+        const response = await fetchWithTimeout(url, {
+          method: "GET",
+          redirect: "follow",
+          cache: "no-store"
+        });
+        const result = await readJson(response);
+        if (!result?.error) return result;
+      } catch (getErr) {
+        console.warn("GET API failed, retrying as POST:", getErr);
+      }
+
+      return await postJson("{}");
+    };
+
+    let lastResult = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const result = await runOnce();
+        if (attempt < maxAttempts - 1 && shouldRetryApiResult(action, result)) {
+          lastResult = result;
+          console.warn(`Retrying ${action} after transient response`, result);
+          await apiRetryDelay(attempt);
+          continue;
+        }
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxAttempts - 1 && API_RETRY_ACTIONS.has(action) &&
+            (err?.name === "AbortError" || err instanceof TypeError)) {
+          console.warn(`Retrying ${action} after request failure`, err);
+          await apiRetryDelay(attempt);
+          continue;
+        }
+        throw err;
+      }
     }
 
-    let r;
-    try {
-      r = await fetchWithTimeout(url, {
-        method: "GET",
-        redirect: "follow",
-        cache: "no-store"
-      });
-      const result = await readJson(r);
-      if (!result?.error) return result;
-    } catch (getErr) {
-      console.warn("GET API failed, retrying as POST:", getErr);
-    }
-
-    r = await fetchWithTimeout(url, {
-      method: "POST",
-      redirect: "follow",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: "{}"
-    });
-    return await readJson(r);
+    if (lastResult) return lastResult;
+    throw lastError || new Error(`${action} could not finish`);
   } catch(e) { 
     if (e?.name === "AbortError") {
       return {error: `${action} took too long to finish. Please try again in a moment.`};
@@ -419,23 +478,58 @@ function normalizeFrameFormat(value) {
   return String(value || "full").toLowerCase() === "half" ? "half-frame" : "full-frame";
 }
 
-async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}) {
+async function createContactSheetTicketMap({orderNumber, uploadNonce, sheets}) {
+  const requests = [];
+  (sheets || []).forEach(sheet => {
+    requests.push({rollIndex:sheet.rollIndex, variant:"delivery"});
+    requests.push({rollIndex:sheet.rollIndex, variant:"story"});
+  });
+  if (!requests.length) return {};
+
+  const result = await apiCall("createContactSheetUploadTickets", {orderNumber, uploadNonce, requests});
+  if (!result?.error && Array.isArray(result?.tickets)) {
+    return result.tickets.reduce((map, ticket) => {
+      map[`${ticket.rollIndex}:${ticket.variant}`] = ticket;
+      return map;
+    }, {});
+  }
+
+  const fallbackAllowed = /unknown action/i.test(String(result?.error || "")) || result?.httpStatus === 404;
+  if (!fallbackAllowed) throw new Error(result?.error || "Could not prepare contact-sheet upload tickets");
+
+  const tickets = {};
+  for (const request of requests) {
+    const ticket = await apiCall("createContactSheetUploadTicket", {
+      orderNumber,
+      uploadNonce,
+      rollIndex:request.rollIndex,
+      variant:request.variant
+    });
+    if (!ticket?.uploadUrl || !ticket?.fileUrl) {
+      throw new Error(ticket?.error || `Could not prepare the ${request.variant} upload`);
+    }
+    tickets[`${request.rollIndex}:${request.variant}`] = {...ticket, ...request};
+  }
+  return tickets;
+}
+
+async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant,ticket}) {
   const blob = variant === "story" ? sheet.storyBlob : sheet.deliveryBlob;
   if (!(blob instanceof Blob)) throw new Error(`Missing ${variant} JPEG for ${sheet.filmName}`);
 
-  const ticket = await apiCall("createContactSheetUploadTicket", {
+  const uploadTicket = ticket || await apiCall("createContactSheetUploadTicket", {
     orderNumber,
     uploadNonce,
     rollIndex:sheet.rollIndex,
     variant
   });
-  if (!ticket?.uploadUrl || !ticket?.fileUrl) {
-    throw new Error(ticket?.error || `Could not prepare the ${variant} upload`);
+  if (!uploadTicket?.uploadUrl || !uploadTicket?.fileUrl) {
+    throw new Error(uploadTicket?.error || `Could not prepare the ${variant} upload`);
   }
 
   let response;
   try {
-    response = await fetch(ticket.uploadUrl, {
+    response = await fetch(uploadTicket.uploadUrl, {
       method:"PUT",
       headers:{"Content-Type":"image/jpeg"},
       body:blob
@@ -451,7 +545,7 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}
     } catch(e) {}
     throw new Error(message);
   }
-  return ticket.fileUrl;
+  return uploadTicket.fileUrl;
 }
 
 const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "-";
@@ -1167,6 +1261,11 @@ function addRoll() {
           throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
         }
         uploadNonce = uploadSession.uploadNonce;
+        const ticketMap = await createContactSheetTicketMap({
+          orderNumber:deliveryOrder.orderNumber,
+          uploadNonce,
+          sheets:sheetsForDelivery
+        });
 
         for (let index=0;index<sheetsForDelivery.length;index+=1) {
           const sheet = sheetsForDelivery[index];
@@ -1175,7 +1274,8 @@ function addRoll() {
             orderNumber:deliveryOrder.orderNumber,
             uploadNonce,
             sheet,
-            variant:"delivery"
+            variant:"delivery",
+            ticket:ticketMap[`${sheet.rollIndex}:delivery`]
           });
 
           setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
@@ -1183,7 +1283,8 @@ function addRoll() {
             orderNumber:deliveryOrder.orderNumber,
             uploadNonce,
             sheet,
-            variant:"story"
+            variant:"story",
+            ticket:ticketMap[`${sheet.rollIndex}:story`]
           });
 
           uploadedSheets.push({

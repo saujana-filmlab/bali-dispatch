@@ -252,7 +252,30 @@ const ADMIN_KEY_SESSION_KEY = "saujana-contact-sheets-admin-key";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
 const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
 const STOCK_HISTORY_CACHE_KEY = "saujana-stock-history-cache-v1";
-const API_TIMEOUT_MS = 9000;
+const API_TIMEOUTS = {
+  default: 20000,
+  getInitialData: 12000,
+  getCustomers: 12000,
+  getOrders: 12000,
+  getStock: 12000,
+  getStockHistory: 12000,
+  verifyContactSheetAdmin: 15000,
+  addCustomer: 25000,
+  updateCustomer: 25000,
+  deleteCustomer: 25000,
+  addOrder: 35000,
+  createFolder: 45000,
+  beginContactSheetUpload: 60000,
+  createContactSheetUploadTicket: 60000,
+  completeContactSheetUpload: 60000,
+  cancelContactSheetUpload: 25000,
+  saveStock: 35000,
+  recordStockHistory: 35000
+};
+
+function apiTimeoutFor(action) {
+  return API_TIMEOUTS[action] || API_TIMEOUTS.default;
+}
 
 function readDispatchCache() {
   try {
@@ -320,7 +343,8 @@ async function apiCall(action, data=null) {
     const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
     const fetchWithTimeout = async (endpoint, options={}) => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      const timeoutMs = apiTimeoutFor(action);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         return await fetch(endpoint, {...options, signal: controller.signal});
       } finally {
@@ -333,7 +357,7 @@ async function apiCall(action, data=null) {
         return JSON.parse(text);
       } catch (err) {
         return {
-          error: `Google Sheets returned ${response.status || "a non-JSON response"}`,
+          error: `Google Sheets returned ${response.status || "a non-JSON response"} while running ${action}`,
           detail: text.slice(0, 180)
         };
       }
@@ -376,7 +400,10 @@ async function apiCall(action, data=null) {
     });
     return await readJson(r);
   } catch(e) { 
-    return {error: e.toString()}; 
+    if (e?.name === "AbortError") {
+      return {error: `${action} took too long to finish. Please try again in a moment.`};
+    }
+    return {error: e?.message || e.toString()}; 
   }
 }
 
@@ -1129,57 +1156,60 @@ function addRoll() {
       if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
       rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
 
-      const uploadSession = await apiCall("beginContactSheetUpload", {
-        orderNumber:deliveryOrder.orderNumber,
-        adminKey:getContactSheetAdminKey()
-      });
-      if (!uploadSession?.uploadNonce) {
-        throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
-      }
-      uploadNonce = uploadSession.uploadNonce;
-
       const uploadedSheets = [];
-      for (let index=0;index<sheetsForDelivery.length;index+=1) {
-        const sheet = sheetsForDelivery[index];
-        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
-        const deliveryUrl = await uploadContactSheetVariant({
+      let completed = null;
+      if (sheetsForDelivery.length) {
+        const uploadSession = await apiCall("beginContactSheetUpload", {
+          orderNumber:deliveryOrder.orderNumber,
+          adminKey:getContactSheetAdminKey()
+        });
+        if (!uploadSession?.uploadNonce) {
+          throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
+        }
+        uploadNonce = uploadSession.uploadNonce;
+
+        for (let index=0;index<sheetsForDelivery.length;index+=1) {
+          const sheet = sheetsForDelivery[index];
+          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
+          const deliveryUrl = await uploadContactSheetVariant({
+            orderNumber:deliveryOrder.orderNumber,
+            uploadNonce,
+            sheet,
+            variant:"delivery"
+          });
+
+          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
+          const storyUrl = await uploadContactSheetVariant({
+            orderNumber:deliveryOrder.orderNumber,
+            uploadNonce,
+            sheet,
+            variant:"story"
+          });
+
+          uploadedSheets.push({
+            rollIndex:sheet.rollIndex,
+            filmName:sheet.filmName,
+            frameCount:sheet.frameCount,
+            scanStyle:normalizeScanStyle(sheet.scanStyle),
+            format:normalizeFrameFormat(sheet.format),
+            deliveryUrl,
+            storyUrl
+          });
+        }
+
+        setPublishStage("Publishing delivery page");
+        completed = await apiCall("completeContactSheetUpload", {
           orderNumber:deliveryOrder.orderNumber,
           uploadNonce,
-          sheet,
-          variant:"delivery"
+          contactSheets:uploadedSheets
         });
-
-        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
-        const storyUrl = await uploadContactSheetVariant({
-          orderNumber:deliveryOrder.orderNumber,
-          uploadNonce,
-          sheet,
-          variant:"story"
-        });
-
-        uploadedSheets.push({
-          rollIndex:sheet.rollIndex,
-          filmName:sheet.filmName,
-          frameCount:sheet.frameCount,
-          scanStyle:normalizeScanStyle(sheet.scanStyle),
-          format:normalizeFrameFormat(sheet.format),
-          deliveryUrl,
-          storyUrl
-        });
+        if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
+        uploadNonce = "";
       }
-
-      setPublishStage("Publishing delivery page");
-      const completed = await apiCall("completeContactSheetUpload", {
-        orderNumber:deliveryOrder.orderNumber,
-        uploadNonce,
-        contactSheets:uploadedSheets
-      });
-      if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
-      uploadNonce = "";
 
       const longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
       const shortUrl = longUrl;
-      onOrderSaved({...(completed.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
+      onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
       const previewUrl = longUrl;
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);

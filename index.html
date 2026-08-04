@@ -252,6 +252,7 @@ const ADMIN_KEY_SESSION_KEY = "saujana-contact-sheets-admin-key";
 const DATA_CACHE_KEY = "saujana-dispatch-cache-v1";
 const STOCK_CACHE_KEY = "saujana-stock-cache-v1";
 const STOCK_HISTORY_CACHE_KEY = "saujana-stock-history-cache-v1";
+const API_TIMEOUT_MS = 9000;
 
 function readDispatchCache() {
   try {
@@ -317,6 +318,15 @@ async function apiCall(action, data=null) {
       };
     }
     const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
+    const fetchWithTimeout = async (endpoint, options={}) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      try {
+        return await fetch(endpoint, {...options, signal: controller.signal});
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     const readJson = async response => {
       const text = await response.text();
       try {
@@ -330,7 +340,7 @@ async function apiCall(action, data=null) {
     };
 
     if (data) {
-      const r = await fetch(url, {
+      const r = await fetchWithTimeout(url, {
         method: "POST", 
         redirect: "follow",
         cache: "no-store",
@@ -344,7 +354,7 @@ async function apiCall(action, data=null) {
 
     let r;
     try {
-      r = await fetch(url, {
+      r = await fetchWithTimeout(url, {
         method: "GET",
         redirect: "follow",
         cache: "no-store"
@@ -355,7 +365,7 @@ async function apiCall(action, data=null) {
       console.warn("GET API failed, retrying as POST:", getErr);
     }
 
-    r = await fetch(url, {
+    r = await fetchWithTimeout(url, {
       method: "POST",
       redirect: "follow",
       cache: "no-store",
@@ -400,24 +410,17 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant}
   try {
     response = await fetch(ticket.uploadUrl, {
       method:"PUT",
-      headers:{
-        "Content-Type":"image/jpeg"
-      },
+      headers:{"Content-Type":"image/jpeg"},
       body:blob
     });
   } catch(error) {
     throw new Error("Could not reach contact-sheet storage. Open Darkroom Dispatch from its approved web address and try again.");
   }
   if (!response.ok) {
-    let message = `Contact-sheet upload failed (${response.status})`;
+    let message = `Upload failed (${response.status})`;
     try {
-      const text = await response.text();
-      try {
-        const result = JSON.parse(text);
-        if (result?.error) message = result.error;
-      } catch(e) {
-        if (text) message = `Contact-sheet upload failed (${response.status}): ${text.slice(0, 120)}`;
-      }
+      const result = await response.json();
+      if (result?.error) message = result.error;
     } catch(e) {}
     throw new Error(message);
   }
@@ -834,6 +837,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [custInput, setCustInput] = useState("");
   const [selCust, setSelCust]     = useState(null);
   const [custEmail, setCustEmail] = useState("");
+  const [extraEmails, setExtraEmails] = useState([]);
   const [custPhone, setCustPhone] = useState("");
   const [deliveryName, setDeliveryName] = useState("");
   const [showDeliveryName, setShowDeliveryName] = useState(false);
@@ -862,6 +866,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setCustInput("");
     setSelCust(null);
     setCustEmail("");
+    setExtraEmails([]);
     setCustPhone("");
     setDeliveryName("");
     setShowDeliveryName(false);
@@ -899,6 +904,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
       setCustInput(prefill.name || "");
       setDeliveryName(prefill.name || "");
       setCustEmail(prefill.email || "");
+      setExtraEmails([]);
       setCustPhone(prefill.phone || "");
       if (clearPrefill) clearPrefill();
     }
@@ -941,6 +947,7 @@ const isNewCustomer =
   setDeliveryName("");
   setShowDeliveryName(false);
   setCustEmail("");
+  setExtraEmails([]);
   setCustPhone("");
 }
 
@@ -951,6 +958,7 @@ function selectCust(c) {
   setCustInput(c.name);
   setDeliveryName(c.name || "");
   setCustEmail(c.email);
+  setExtraEmails([]);
   setCustPhone(c.phone || "");
   setShowDrop(false);
 }
@@ -1011,6 +1019,18 @@ async function updateCustomerInfo() {
 function addRoll() {
   setRolls(r => [...r, ""]);
 }
+
+  function addExtraEmail() {
+    setExtraEmails(emails => [...emails, ""]);
+  }
+
+  function updateExtraEmail(index, value) {
+    setExtraEmails(emails => emails.map((email, i) => i === index ? value : email));
+  }
+
+  function removeExtraEmail(index) {
+    setExtraEmails(emails => emails.filter((_, i) => i !== index));
+  }
 
   function addRoll()        { setRolls(r=>[...r,""]); }
   function updateRoll(i,v)  { setRolls(r=>r.map((x,j)=>j===i?v:x)); }
@@ -1109,62 +1129,57 @@ function addRoll() {
       if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
       rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
 
+      const uploadSession = await apiCall("beginContactSheetUpload", {
+        orderNumber:deliveryOrder.orderNumber,
+        adminKey:getContactSheetAdminKey()
+      });
+      if (!uploadSession?.uploadNonce) {
+        throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
+      }
+      uploadNonce = uploadSession.uploadNonce;
+
       const uploadedSheets = [];
-      let completed = null;
-
-      if (sheetsForDelivery.length > 0) {
-        setPublishStage("Preparing contact-sheet upload");
-        const uploadSession = await apiCall("beginContactSheetUpload", {
-          orderNumber:deliveryOrder.orderNumber,
-          adminKey:getContactSheetAdminKey()
-        });
-        if (!uploadSession?.uploadNonce) {
-          throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
-        }
-        uploadNonce = uploadSession.uploadNonce;
-
-        for (let index=0;index<sheetsForDelivery.length;index+=1) {
-          const sheet = sheetsForDelivery[index];
-          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
-          const deliveryUrl = await uploadContactSheetVariant({
-            orderNumber:deliveryOrder.orderNumber,
-            uploadNonce,
-            sheet,
-            variant:"delivery"
-          });
-
-          setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
-          const storyUrl = await uploadContactSheetVariant({
-            orderNumber:deliveryOrder.orderNumber,
-            uploadNonce,
-            sheet,
-            variant:"story"
-          });
-
-          uploadedSheets.push({
-            rollIndex:sheet.rollIndex,
-            filmName:sheet.filmName,
-            frameCount:sheet.frameCount,
-            scanStyle:normalizeScanStyle(sheet.scanStyle),
-            format:normalizeFrameFormat(sheet.format),
-            deliveryUrl,
-            storyUrl
-          });
-        }
-
-        setPublishStage("Publishing delivery page");
-        completed = await apiCall("completeContactSheetUpload", {
+      for (let index=0;index<sheetsForDelivery.length;index+=1) {
+        const sheet = sheetsForDelivery[index];
+        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);
+        const deliveryUrl = await uploadContactSheetVariant({
           orderNumber:deliveryOrder.orderNumber,
           uploadNonce,
-          contactSheets:uploadedSheets
+          sheet,
+          variant:"delivery"
         });
-        if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
-        uploadNonce = "";
+
+        setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Story`);
+        const storyUrl = await uploadContactSheetVariant({
+          orderNumber:deliveryOrder.orderNumber,
+          uploadNonce,
+          sheet,
+          variant:"story"
+        });
+
+        uploadedSheets.push({
+          rollIndex:sheet.rollIndex,
+          filmName:sheet.filmName,
+          frameCount:sheet.frameCount,
+          scanStyle:normalizeScanStyle(sheet.scanStyle),
+          format:normalizeFrameFormat(sheet.format),
+          deliveryUrl,
+          storyUrl
+        });
       }
+
+      setPublishStage("Publishing delivery page");
+      const completed = await apiCall("completeContactSheetUpload", {
+        orderNumber:deliveryOrder.orderNumber,
+        uploadNonce,
+        contactSheets:uploadedSheets
+      });
+      if (!completed?.success) throw new Error(completed?.error || "Could not publish the contact sheets");
+      uploadNonce = "";
 
       const longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
       const shortUrl = longUrl;
-      onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
+      onOrderSaved({...(completed.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
       const previewUrl = longUrl;
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
@@ -1228,7 +1243,11 @@ function addRoll() {
     const bodyWithNotes = r.notes
       ? encodeURIComponent(decodeURIComponent(body).replace(`Order: ${r.orderNumber}\n\nPlease`, `Order: ${r.orderNumber}${emailNotesText(r)}\n\nPlease`))
       : body;
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${custEmail?encodeURIComponent(custEmail):""}&su=${sub}&body=${bodyWithNotes}`,"_blank");
+    const recipients = [custEmail, ...extraEmails]
+      .map(email => String(email || "").trim())
+      .filter(Boolean)
+      .join(",");
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${recipients?encodeURIComponent(recipients):""}&su=${sub}&body=${bodyWithNotes}`,"_blank");
   }
 
   function copyWhatsApp() {
@@ -1327,6 +1346,7 @@ Saujana Film Lab Bali`;
     setDeliveryName(o.customerName || "");
     setShowDeliveryName(!!(customer && o.customerName && o.customerName !== customer.name));
     setCustEmail(customer ? (customer.email || "") : "");
+    setExtraEmails([]);
     setCustPhone(customer ? (customer.phone || "") : "");
     setSelCust(customer);
     
@@ -1498,6 +1518,26 @@ Saujana Film Lab Bali`;
     onChange={e=>setCustEmail(e.target.value)}
     placeholder="Auto-filled or enter customer email"
   />
+
+  {extraEmails.map((email, index) => (
+    <div key={index} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,marginTop:8,alignItems:"center"}}>
+      <input
+        value={email}
+        onChange={e=>updateExtraEmail(index,e.target.value)}
+        placeholder="Additional email"
+        style={{padding:"10px 12px",fontSize:12}}
+      />
+      <button onClick={()=>removeExtraEmail(index)}
+        style={{...css.btn("ghost"),padding:"10px 12px",fontSize:9}}>
+        Remove
+      </button>
+    </div>
+  ))}
+
+  <button onClick={addExtraEmail}
+    style={{...css.btn("ghost"),padding:"7px 10px",fontSize:9,marginTop:8}}>
+    + Add Another Email
+  </button>
 </div>
 
 {/* Phone */}
@@ -2521,6 +2561,7 @@ function StockTracker() {
   const [manageOpen, setManageOpen] = useState(false);
   const [manageNew, setManageNew] = useState({category:"", name:"", qty:"0"});
   const [manageSearch, setManageSearch] = useState("");
+  const [stockInDrafts, setStockInDrafts] = useState({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [stockHistory, setStockHistory] = useState(readLocalStockHistory());
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -2529,6 +2570,8 @@ function StockTracker() {
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),2500); };
   const remainingQty = item => Math.max(0, (item.qty || 0) - (item.sold || 0));
+  const stockKey = value => String(value || "").trim().toLowerCase();
+  const stockDraftKey = (catIdx, itemIdx) => `${catIdx}:${itemIdx}`;
   const stockMetaText = item => {
     if (item.addedAt) return `Added ${fmtDT(item.addedAt)}`;
     if (item.lastUpdated) return `Updated ${fmtDT(item.lastUpdated)}`;
@@ -2547,6 +2590,14 @@ function StockTracker() {
     items: (cat.items || []).map(item => ({
       ...item,
       sold:0,
+      addedAt:"",
+      lastUpdated:timestamp || new Date().toISOString()
+    }))
+  }));
+  const stampStockSaved = (categories, timestamp) => categories.map(cat => ({
+    ...cat,
+    items: (cat.items || []).map(item => ({
+      ...item,
       addedAt:"",
       lastUpdated:timestamp || new Date().toISOString()
     }))
@@ -2812,21 +2863,83 @@ function StockTracker() {
     setAddingTo(null);
   }
 
-  function addManagedItem() {
+  async function saveStockState(nextStock, successMessage) {
+    setSaving(true);
+    try {
+      const res = await apiCall("saveStock", {stock: nextStock});
+      if (res && res.error) throw new Error(res.error);
+      const savedStock = stampStockSaved(nextStock, res && res.timestamp);
+      setStock(savedStock);
+      writeStockCache(savedStock);
+      showToast(successMessage);
+    } catch(e) {
+      setStock(nextStock);
+      writeStockCache(nextStock);
+      showToast("Saved locally. Sheets sync failed");
+    }
+    setSaving(false);
+  }
+
+  async function addManagedItem() {
     const category = manageNew.category.trim().toUpperCase();
     const name = manageNew.name.trim();
     if (!category || !name) return;
     const qty = Math.max(0, parseInt(manageNew.qty) || 0);
     let added = false;
+    let duplicateFound = false;
     const newItem = createStockItem(name, qty);
     const updated = stock.map(cat => {
       if (cat.category !== category) return cat;
       added = true;
-      return {...cat, items:[...cat.items, newItem]};
+      const existingIdx = (cat.items || []).findIndex(item => stockKey(item.name) === stockKey(name));
+      if (existingIdx >= 0) {
+        duplicateFound = true;
+        showToast("Item already exists. Use Stock In on its row.");
+        return cat;
+      }
+      return {...cat, items:[...(cat.items || []), newItem]};
     });
-    setStock(added ? updated : [...updated, {category, items:[newItem]}]);
+    if (duplicateFound) {
+      setManageNew(m => ({...m, name:"", qty:""}));
+      return;
+    }
+    const nextStock = added ? updated : [...updated, {category, items:[newItem]}];
     setManageNew({category:"", name:"", qty:""});
-    showToast("New stock added");
+    await saveStockState(nextStock, "New item saved");
+  }
+
+  async function addStockToManagedItem(catIdx, itemIdx) {
+    const draftKey = stockDraftKey(catIdx, itemIdx);
+    const qty = Math.max(0, parseInt(stockInDrafts[draftKey]) || 0);
+    if (qty <= 0) {
+      showToast("Enter stock-in quantity first");
+      return;
+    }
+    const item = stock[catIdx]?.items?.[itemIdx];
+    if (!item) return;
+    const updated = stock.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat,
+      items: (cat.items || []).map((row, ii) => ii !== itemIdx ? row : {
+        ...row,
+        qty: (Number(row.qty) || 0) + qty
+      })
+    });
+    setStockInDrafts(drafts => ({...drafts, [draftKey]:""}));
+    await saveStockState(updated, `${item.name} +${qty} saved`);
+  }
+
+  async function removeManagedItem(catIdx, itemIdx) {
+    const item = stock[catIdx]?.items?.[itemIdx];
+    if (!item) return;
+    const ok = window.confirm(`Remove "${item.name}" from stock?`);
+    if (!ok) return;
+    const updated = stock
+      .map((cat, ci) => ci !== catIdx ? cat : {
+        ...cat,
+        items: (cat.items || []).filter((_, ii) => ii !== itemIdx)
+      })
+      .filter(cat => cat.items.length > 0);
+    await saveStockState(updated, "Stock item removed");
   }
 
   function addCategory() {
@@ -3122,35 +3235,32 @@ function StockTracker() {
               onChange={e=>setManageSearch(e.target.value)}
               placeholder="Search item or category..."
               style={{padding:"9px 11px",fontSize:12,marginBottom:12}}/>
-            <div style={{background:"var(--dark)",border:"1px solid var(--border)",borderLeft:"3px solid var(--gold)",
-                         borderRadius:2,padding:12,marginBottom:14}}>
-              <div style={{fontSize:9,letterSpacing:"0.28em",textTransform:"uppercase",color:"var(--gold-l)",marginBottom:10}}>
-                Add New Stock
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 90px 104px",gap:8}}>
-                <input value={manageNew.name}
-                  onChange={e=>setManageNew(m=>({...m,name:e.target.value}))}
-                  placeholder="Item name"
-                  style={{padding:"8px 10px",fontSize:12}}/>
-                <input value={manageNew.category}
-                  onChange={e=>setManageNew(m=>({...m,category:e.target.value}))}
-                  placeholder="Category"
-                  style={{padding:"8px 10px",fontSize:12}}/>
-                <input type="number" min="0" value={manageNew.qty}
-                  onChange={e=>setManageNew(m=>({...m,qty:e.target.value}))}
-                  placeholder="Qty"
-                  style={{padding:"8px 10px",fontSize:12}}/>
-                <button className="day-accent" onClick={addManagedItem}
-                  style={{...css.btn("blue"),padding:"8px 10px",fontSize:9}}>Add Stock</button>
-              </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 90px 92px",gap:8,marginBottom:12}}>
+              <input value={manageNew.name}
+                onChange={e=>setManageNew(m=>({...m,name:e.target.value}))}
+                placeholder="New item name"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <input value={manageNew.category}
+                onChange={e=>setManageNew(m=>({...m,category:e.target.value}))}
+                placeholder="Category"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <input type="number" min="0" value={manageNew.qty}
+                onChange={e=>setManageNew(m=>({...m,qty:e.target.value}))}
+                placeholder="Start qty"
+                style={{padding:"8px 10px",fontSize:12}}/>
+              <button className="day-accent" onClick={addManagedItem} disabled={saving}
+                style={{...css.btn("blue"),padding:"8px 10px",fontSize:9,opacity:saving?0.55:1}}>
+                {saving ? "Saving..." : "Add Item"}
+              </button>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"1.35fr 0.9fr 68px 132px 82px",gap:8,
+            <div style={{display:"grid",gridTemplateColumns:"1.16fr 0.74fr 58px 116px 118px 132px",gap:8,
                          padding:"0 8px 7px",fontSize:8,letterSpacing:"0.18em",textTransform:"uppercase",
                          color:"var(--muted)"}}>
               <span>Item</span>
               <span>Category</span>
               <span style={{textAlign:"center"}}>Qty</span>
+              <span>Stock In</span>
               <span>Added / Updated</span>
               <span></span>
             </div>
@@ -3166,7 +3276,7 @@ function StockTracker() {
                 })
                 .map(({cat, catIdx, item, itemIdx}) => (
                 <div key={`${cat.category}-${itemIdx}-${item.name}`} style={{
-                  display:"grid",gridTemplateColumns:"1.35fr 0.9fr 68px 132px 82px",gap:8,alignItems:"center",
+                  display:"grid",gridTemplateColumns:"1.16fr 0.74fr 58px 116px 118px 132px",gap:8,alignItems:"center",
                   background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2,padding:8,
                   opacity:item.visible===false?0.62:1
                 }}>
@@ -3180,13 +3290,29 @@ function StockTracker() {
                   <input type="number" min="0" value={item.qty || 0}
                     onChange={e=>setItemField(catIdx,itemIdx,"qty",e.target.value)}
                     style={{padding:"7px 9px",fontSize:12,textAlign:"center"}}/>
+                  <div style={{display:"grid",gridTemplateColumns:"48px 1fr",gap:6}}>
+                    <input type="number" min="0" value={stockInDrafts[stockDraftKey(catIdx,itemIdx)] || ""}
+                      onChange={e=>setStockInDrafts(drafts=>({...drafts,[stockDraftKey(catIdx,itemIdx)]:e.target.value}))}
+                      placeholder="+"
+                      style={{padding:"7px 6px",fontSize:12,textAlign:"center"}}/>
+                    <button onClick={()=>addStockToManagedItem(catIdx,itemIdx)} disabled={saving}
+                      style={{...css.btn("blue"),padding:"8px 6px",fontSize:8,opacity:saving?0.55:1}}>
+                      Add
+                    </button>
+                  </div>
                   <div style={{fontSize:10,color:item.addedAt?"var(--gold-l)":"var(--muted)",lineHeight:1.4}}>
                     {stockMetaText(item)}
                   </div>
-                  <button onClick={()=>setItemVisible(catIdx,itemIdx,item.visible===false)}
-                    style={{...css.btn(item.visible===false?"green":"ghost"),padding:"8px 10px",fontSize:9}}>
-                    {item.visible===false?"Restore":"Hide"}
-                  </button>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    <button onClick={()=>setItemVisible(catIdx,itemIdx,item.visible===false)}
+                      style={{...css.btn(item.visible===false?"green":"ghost"),padding:"8px 8px",fontSize:9}}>
+                      {item.visible===false?"Restore":"Hide"}
+                    </button>
+                    <button onClick={()=>removeManagedItem(catIdx,itemIdx)}
+                      style={{...css.btn("danger"),padding:"8px 8px",fontSize:9}}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
               )))}
             </div>

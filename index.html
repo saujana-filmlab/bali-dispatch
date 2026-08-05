@@ -265,6 +265,7 @@ const API_TIMEOUTS = {
   deleteCustomer: 25000,
   addOrder: 35000,
   createFolder: 45000,
+  prepareContactSheetPublish: 70000,
   beginContactSheetUpload: 60000,
   createContactSheetUploadTicket: 60000,
   completeContactSheetUpload: 60000,
@@ -284,6 +285,7 @@ const API_RETRY_ACTIONS = new Set([
   "verifyContactSheetAdmin",
   "addOrder",
   "createFolder",
+  "prepareContactSheetPublish",
   "beginContactSheetUpload",
   "createContactSheetUploadTicket",
   "createContactSheetUploadTickets",
@@ -487,6 +489,18 @@ function normalizeFrameFormat(value) {
   return String(value || "full").toLowerCase() === "half" ? "half-frame" : "full-frame";
 }
 
+function validateContactSheetsForPublish(sheets) {
+  (sheets || []).forEach((sheet, index) => {
+    const label = sheet.filmName || `roll ${index + 1}`;
+    if (!(sheet.deliveryBlob instanceof Blob)) {
+      throw new Error(`Contact sheet missing delivery upload for ${label}. Rebuild that roll and try again.`);
+    }
+    if (!(sheet.storyBlob instanceof Blob)) {
+      throw new Error(`Contact sheet missing story upload for ${label}. Rebuild that roll and try again.`);
+    }
+  });
+}
+
 async function createContactSheetTicketMap({orderNumber, uploadNonce, sheets}) {
   const requests = [];
   (sheets || []).forEach(sheet => {
@@ -522,6 +536,56 @@ async function createContactSheetTicketMap({orderNumber, uploadNonce, sheets}) {
   return tickets;
 }
 
+async function prepareContactSheetPublish({orderPayload, sheets}) {
+  const requests = [];
+  (sheets || []).forEach(sheet => {
+    requests.push({rollIndex:sheet.rollIndex, variant:"delivery"});
+    requests.push({rollIndex:sheet.rollIndex, variant:"story"});
+  });
+
+  const prepared = await apiCall("prepareContactSheetPublish", {
+    ...orderPayload,
+    adminKey:getContactSheetAdminKey(),
+    requests
+  });
+
+  if (!prepared?.error && prepared?.uploadNonce && Array.isArray(prepared?.tickets)) {
+    const ticketMap = prepared.tickets.reduce((map, ticket) => {
+      map[`${ticket.rollIndex}:${ticket.variant}`] = ticket;
+      return map;
+    }, {});
+    return {
+      saved: prepared.order || prepared.saved || prepared,
+      uploadNonce: prepared.uploadNonce,
+      ticketMap
+    };
+  }
+
+  const fallbackAllowed = /unknown action/i.test(String(prepared?.error || ""));
+  if (!fallbackAllowed) throw new Error(prepared?.error || "Could not prepare contact-sheet publishing");
+
+  const saved = await apiCall("addOrder", orderPayload);
+  if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
+
+  const uploadSession = await apiCall("beginContactSheetUpload", {
+    orderNumber:orderPayload.orderNumberText || orderPayload.orderNumber,
+    adminKey:getContactSheetAdminKey()
+  });
+  if (!uploadSession?.uploadNonce) {
+    throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
+  }
+
+  return {
+    saved,
+    uploadNonce: uploadSession.uploadNonce,
+    ticketMap: await createContactSheetTicketMap({
+      orderNumber:orderPayload.orderNumberText || orderPayload.orderNumber,
+      uploadNonce:uploadSession.uploadNonce,
+      sheets
+    })
+  };
+}
+
 async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant,ticket}) {
   const blob = variant === "story" ? sheet.storyBlob : sheet.deliveryBlob;
   if (!(blob instanceof Blob)) throw new Error(`Missing ${variant} JPEG for ${sheet.filmName}`);
@@ -537,14 +601,22 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant,
   }
 
   let response;
-  try {
-    response = await fetch(uploadTicket.uploadUrl, {
-      method:"PUT",
-      headers:{"Content-Type":"image/jpeg"},
-      body:blob
-    });
-  } catch(error) {
-    throw new Error("Could not reach contact-sheet storage. Open Darkroom Dispatch from its approved web address and try again.");
+  let lastError = null;
+  for (let attempt=0; attempt<API_RETRY_DELAYS.length+1; attempt+=1) {
+    try {
+      response = await fetch(uploadTicket.uploadUrl, {
+        method:"PUT",
+        headers:{"Content-Type":"image/jpeg"},
+        body:blob
+      });
+      if (response.ok || !(response.status === 429 || response.status >= 500)) break;
+    } catch(error) {
+      lastError = error;
+    }
+    if (attempt < API_RETRY_DELAYS.length) await apiRetryDelay(attempt);
+  }
+  if (!response) {
+    throw new Error(lastError?.message || "Could not reach contact-sheet storage. Open Darkroom Dispatch from its approved web address and try again.");
   }
   if (!response.ok) {
     let message = `Upload failed (${response.status})`;
@@ -1250,32 +1322,34 @@ function addRoll() {
     let uploadNonce = "";
 
     try {
-      const saved = await apiCall("addOrder", {
+      validateContactSheetsForPublish(sheetsForDelivery);
+
+      const orderPayload = {
         ...deliveryOrder,
         orderNumberText:deliveryOrder.orderNumber,
         customerName:registryName,
         customerId:selCust?.id || ""
-      });
-      if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
+      };
+
+      let saved = null;
+      let ticketMap = {};
+      if (sheetsForDelivery.length) {
+        const prepared = await prepareContactSheetPublish({
+          orderPayload,
+          sheets:sheetsForDelivery
+        });
+        saved = prepared.saved;
+        uploadNonce = prepared.uploadNonce;
+        ticketMap = prepared.ticketMap || {};
+      } else {
+        saved = await apiCall("addOrder", orderPayload);
+        if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
+      }
       rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
 
       const uploadedSheets = [];
       let completed = null;
       if (sheetsForDelivery.length) {
-        const uploadSession = await apiCall("beginContactSheetUpload", {
-          orderNumber:deliveryOrder.orderNumber,
-          adminKey:getContactSheetAdminKey()
-        });
-        if (!uploadSession?.uploadNonce) {
-          throw new Error(uploadSession?.error || "Could not start the contact-sheet upload");
-        }
-        uploadNonce = uploadSession.uploadNonce;
-        const ticketMap = await createContactSheetTicketMap({
-          orderNumber:deliveryOrder.orderNumber,
-          uploadNonce,
-          sheets:sheetsForDelivery
-        });
-
         for (let index=0;index<sheetsForDelivery.length;index+=1) {
           const sheet = sheetsForDelivery[index];
           setPublishStage(`Uploading roll ${index+1} of ${sheetsForDelivery.length} · Delivery`);

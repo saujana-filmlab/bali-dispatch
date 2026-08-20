@@ -51,6 +51,7 @@ for (const key of [
 const metadata = {
   main_module: "index.js",
   compatibility_date: "2026-08-01",
+  compatibility_flags: ["global_fetch_strictly_public"],
   bindings: [
     { type: "plain_text", name: "SUPABASE_SCHEMA", text: "public" },
     { type: "secret_text", name: "SUPABASE_URL", text: env.SUPABASE_URL },

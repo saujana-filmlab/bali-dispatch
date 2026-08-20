@@ -912,8 +912,8 @@ async function getShortLink(longUrl) {
 }
 const css = {
   btn: (variant="primary") => ({
-    padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",
-    fontSize:10, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase",
+    padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"Arial,\"Helvetica Neue\",Helvetica,sans-serif",
+    fontSize:10, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase",
     transition:"all 0.18s ease", cursor:"pointer",
     ...(variant==="primary" ? {background:"var(--white)", color:"var(--black)", boxShadow:"0 8px 20px rgba(0,0,0,0.18)"} :
         variant==="blue"    ? {background:"linear-gradient(180deg,var(--blue),var(--ocean))", color:"var(--on-blue)", border:"1px solid var(--blue-l)", boxShadow:"0 0 0 1px rgba(47,156,255,0.12),0 10px 22px rgba(0,87,184,0.16)"} :
@@ -999,8 +999,9 @@ function ExportDataButton() {
           padding:"7px 13px",
           fontSize:9,
           fontWeight:800,
-          letterSpacing:"0.04em",
-          textTransform:"none",
+          letterSpacing:"0.06em",
+          textTransform:"uppercase",
+          fontFamily:"Arial,\"Helvetica Neue\",Helvetica,sans-serif",
           background:"var(--card2)",
           color:"var(--gold-l)",
           border:"1px solid var(--gold-l)",
@@ -1009,7 +1010,7 @@ function ExportDataButton() {
         }}
       >
         <span aria-hidden="true" style={{fontSize:12,lineHeight:1}}>🚀</span>
-        <span>Export Data to Sheets</span>
+        <span>EXPORT DATA TO SHEETS</span>
       </button>
       {open && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:1000,
@@ -1175,6 +1176,15 @@ function LockScreen({onUnlock}) {
     overflow:"hidden"
   }}>
 
+    <div style={{textAlign:"center",marginBottom:26}}>
+      <img
+        className="brand-logo"
+        src="saujana-dd.png"
+        alt="Darkroom Dispatch Logo"
+        style={{display:"block",height:150,maxWidth:"100%",objectFit:"contain"}}
+      />
+    </div>
+
     <div style={{
       width:"100%",
       maxWidth:390,
@@ -1190,9 +1200,9 @@ function LockScreen({onUnlock}) {
         <div>
           <img
             className="brand-logo"
-            src="dd-horizontal.png"
-            alt="Darkroom Dispatch Logo"
-            style={{height:42,maxWidth:220,objectFit:"contain",display:"block",marginBottom:10}}
+            src="saujana-white.png"
+            alt="Saujana Film Lab Bali Logo"
+            style={{height:34,maxWidth:210,objectFit:"contain",objectPosition:"left center",display:"block",marginBottom:10}}
           />
           <div style={{fontSize:8,letterSpacing:"0.26em",textTransform:"uppercase",color:"var(--muted)"}}>
             Film Lab Bali · Operations
@@ -2084,7 +2094,7 @@ Saujana Film Lab Bali`;
             <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
               <label style={{...css.label,marginBottom:4}}>Delivery Roll Details</label>
               <div style={{fontSize:8.5,color:"var(--dim)",lineHeight:1.55,marginBottom:8}}>
-                optional - fill if you want to change the details
+                (OPTIONAL - FILL IF YOU WANT TO CHANGE THE DETAILS)
               </div>
               <input
                 value={deliveryRollDetails}
@@ -2878,18 +2888,21 @@ function App() {
               <button
                 onClick={() => setTheme(t => t === "day" ? "night" : "day")}
                 style={{...css.btn("ghost"),display:"inline-flex",alignItems:"center",gap:6,
-                        padding:"6px 12px",fontSize:9,minWidth:88,letterSpacing:"0.02em",
-                        textTransform:"none",fontWeight:800,lineHeight:1}}
+                        padding:"6px 12px",fontSize:9,minWidth:88,letterSpacing:"0.06em",
+                        textTransform:"uppercase",fontWeight:800,lineHeight:1,
+                        fontFamily:"Arial,\"Helvetica Neue\",Helvetica,sans-serif"}}
               >
-                <span>Theme:</span><span aria-hidden="true" style={{fontSize:12,lineHeight:1}}>{theme === "day" ? "☀️" : "🌙"}</span>
+                <span>THEME:</span><span aria-hidden="true" style={{fontSize:12,lineHeight:1}}>{theme === "day" ? "☀️" : "🌙"}</span>
               </button>
               <button className="day-accent" onClick={handleNewOrder}
-                style={{...css.btn("blue"),padding:"6px 12px",fontSize:9,letterSpacing:"0.04em",fontWeight:800}}>
+                style={{...css.btn("blue"),padding:"6px 12px",fontSize:9,letterSpacing:"0.06em",fontWeight:800,
+                        fontFamily:"Arial,\"Helvetica Neue\",Helvetica,sans-serif"}}>
                 + New Order
               </button>
               <button onClick={load} disabled={syncing}
                 style={{...css.btn("ghost"),padding:"6px 12px",fontSize:9,opacity:syncing?0.55:1,
-                        letterSpacing:"0.04em",fontWeight:800}}>
+                        letterSpacing:"0.06em",fontWeight:800,
+                        fontFamily:"Arial,\"Helvetica Neue\",Helvetica,sans-serif"}}>
                 {refreshStatus === "working" ? "Working on it..." : refreshStatus === "done" ? "All done!" : "↻ Refresh"}
               </button>
               <div className="scoreboard" aria-label={`${customers.length} customers, ${orders.length} orders`}>

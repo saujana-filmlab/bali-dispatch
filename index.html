@@ -15,26 +15,27 @@
   <meta property="og:image" content="https://bali-darkroom.saujanalab.com/dd-icon.png" />
   <meta property="og:url" content="https://bali-darkroom.saujanalab.com/" />
   <meta property="og:type" content="website" />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300;1,400&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
-  --black:#080a0f;--dark:#0d1117;--card:#111720;--card2:#161e2a;
-  --border:#1e2d42;--border2:#253448;
-  --blue:#1a6fa8;--blue-l:#2a8fd0;--blue-gl:#1b3a5c;--ocean:#0e4d7a;
-  --gold:#c8922a;--gold-l:#e8b84b;
-  --white:#f4f6fa;--light:#c8d4e0;--muted:#5a7080;--dim:#2a3a4a;
+  --black:#050608;--dark:#090c10;--card:#0d1116;--card2:#111821;
+  --field:#070a0e;--ghost-bg:rgba(17,24,33,0.86);--on-blue:#f8fbff;
+  --border:#1a2633;--border2:#263545;
+  --blue:#0057b8;--blue-l:#2f9cff;--blue-gl:#071f3d;--ocean:#003d7a;
+  --gold:#c8922a;--gold-l:#edbf52;
+  --white:#f4f3ee;--light:#c9d2dc;--muted:#73808c;--dim:#394653;
   --green:#25d366;--greenD:#0d1f12;--greenB:#1a4028;--greenT:#5dd88a;
   --red:#e05040;
 }
 
 body[data-theme="light"]{
-  --black:#f5f3ee;--dark:#ebe7df;--card:#ffffff;--card2:#f0ece4;
-  --border:#d8d0c3;--border2:#c8bdad;
-  --blue:#17618f;--blue-l:#1d79b5;--blue-gl:#dcecf6;--ocean:#1c6f9c;
+  --black:#f5f3ee;--dark:#ebe7df;--card:#fffdf8;--card2:#f0ece4;
+  --field:#fffaf2;--ghost-bg:#fffaf2;--on-blue:#f8fbff;
+  --border:#d9d0c2;--border2:#c8bdad;
+  --blue:#004b9f;--blue-l:#006ed0;--blue-gl:#dcecf6;--ocean:#00579f;
   --gold:#a8791e;--gold-l:#f4c542;
   --white:#171a20;--light:#35404a;--muted:#6c756f;--dim:#a99f91;
   --green:#128a43;--greenD:#e2f3e7;--greenB:#b8dcc5;--greenT:#167640;
@@ -55,14 +56,18 @@ body[data-theme="light"] .stock-heading{
   color:#a8791e !important;
 }
 
+body[data-theme="light"] .csg-sauce-logo{
+  filter:invert(1) contrast(1.18);
+}
+
 .scoreboard{
   display:flex;
   align-items:center;
   gap:6px;
-  padding:5px 8px;
-  border:1px solid rgba(255,140,40,0.45);
-  background:rgba(45,18,4,0.75);
-  box-shadow:inset 0 0 12px rgba(255,140,40,0.16),0 0 10px rgba(255,140,40,0.08);
+  padding:6px 9px;
+  border:1px solid rgba(237,191,82,0.52);
+  background:linear-gradient(180deg,rgba(45,20,4,0.82),rgba(20,9,2,0.9));
+  box-shadow:inset 0 0 14px rgba(255,140,40,0.14),0 0 16px rgba(255,140,40,0.08);
 }
 
 .scoreboard-item{
@@ -71,7 +76,7 @@ body[data-theme="light"] .stock-heading{
   gap:5px;
   color:#ff9f32;
   text-shadow:0 0 7px rgba(255,140,40,0.8);
-  font-family:'Montserrat',sans-serif;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
 }
 
 .scoreboard-number{
@@ -188,47 +193,50 @@ body[data-theme="light"] .readable-link{
   }
 }
 body {
-  background:var(--black);
+  background:
+    linear-gradient(180deg,rgba(0,87,184,0.08),transparent 210px),
+    var(--black);
   color:var(--white);
-  font-family:'Montserrat',sans-serif;
-  font-weight:300;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-weight:400;
   min-height:100vh;
   transition:background 0.2s,color 0.2s;
+  position:relative;
 }
+
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:.055;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index:0;
+}
+
+#root{position:relative;z-index:1;}
 
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:var(--dark);}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 input,textarea{
   width:100%;
-  background:var(--dark);
+  background:var(--field);
   border:1px solid var(--border);
   border-radius:2px;
   padding:12px 14px;
   color:var(--white);
-  font-family:'Montserrat',sans-serif;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
   font-size:13px;
-  font-weight:300;
+  font-weight:400;
   outline:none;
-  transition:border-color 0.2s;
+  transition:border-color 0.2s,box-shadow 0.2s,background 0.2s;
 }
-    input:focus,textarea:focus{border-color:var(--blue-l);}
+    input:focus,textarea:focus{border-color:var(--blue-l);box-shadow:0 0 0 1px rgba(47,156,255,0.25);}
     input::placeholder,textarea::placeholder{color:var(--dim);}
-    button{cursor:pointer;font-family:'Montserrat',sans-serif;}
+    button{cursor:pointer;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;}
     a{text-decoration:none;}
 
-    .guidelines-toggle{
-      width:100%;display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;
-      padding:10px 0;background:none;border:0;border-bottom:1px solid var(--border);color:var(--muted);
-      font-size:9px;letter-spacing:.2em;text-transform:uppercase;text-align:left;
-    }
-    .guidelines-toggle span{color:var(--gold-l);font-size:15px;line-height:1;}
-    .dispatch-flow{
-      display:grid;gap:8px;margin:-2px 0 18px;padding:12px;background:var(--dark);border:1px solid var(--border);
-      color:var(--muted);font-size:9px;line-height:1.55;
-    }
-    .dispatch-flow-step{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;}
-    .dispatch-flow-step strong{color:var(--gold-l);font-size:9px;}
     .dispatch-workspace{display:flex;gap:20px;height:calc(100vh - 130px);}
     .dispatch-sidebar{width:420px;flex:0 0 420px;overflow-y:auto;}
     .dispatch-main{flex:1;min-width:0;overflow-y:auto;}
@@ -245,7 +253,13 @@ input,textarea{
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
+const LEGACY_API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
+const WORKER_API = window.location.hostname === "127.0.0.1"
+  ? "http://127.0.0.1:8799"
+  : "https://bali-dispatch-api.saujanalab-bali.workers.dev";
+const API_MODE_PARAM = new URLSearchParams(window.location.search).get("api");
+const API_MODE = API_MODE_PARAM === "legacy" ? "legacy" : "supabase";
+const API = API_MODE === "supabase" ? WORKER_API : LEGACY_API;
 const BASE_URL = "https://bali-scans.saujanalab.com";
 const AUTH_SESSION_KEY = "saujana-auth";
 const ADMIN_KEY_SESSION_KEY = "saujana-contact-sheets-admin-key";
@@ -272,7 +286,8 @@ const API_TIMEOUTS = {
   cancelContactSheetUpload: 25000,
   saveStock: 35000,
   finalizeStock: 45000,
-  recordStockHistory: 35000
+  recordStockHistory: 35000,
+  exportData: 45000
 };
 const API_RETRY_DELAYS = [600, 1600, 3600];
 const API_RETRY_ACTIONS = new Set([
@@ -293,8 +308,40 @@ const API_RETRY_ACTIONS = new Set([
   "cancelContactSheetUpload",
   "saveStock",
   "finalizeStock",
-  "recordStockHistory"
+  "recordStockHistory",
+  "exportData"
 ]);
+const WORKER_ACTIONS = new Set([
+  "dispatchHealthcheck",
+  "healthcheck",
+  "getInitialData",
+  "getCustomers",
+  "addCustomer",
+  "updateCustomer",
+  "deleteCustomer",
+  "getOrders",
+  "getOrder",
+  "getOrderByNumber",
+  "addOrder",
+  "verifyContactSheetAdmin",
+  "prepareContactSheetPublish",
+  "beginContactSheetUpload",
+  "createContactSheetUploadTicket",
+  "createContactSheetUploadTickets",
+  "completeContactSheetUpload",
+  "cancelContactSheetUpload",
+  "getStock",
+  "saveStock",
+  "finalizeStock",
+  "getStockHistory",
+  "recordStockHistory",
+  "exportData"
+]);
+
+function apiEndpointForAction(action) {
+  if (API_MODE === "supabase" && WORKER_ACTIONS.has(action)) return WORKER_API;
+  return LEGACY_API;
+}
 
 function apiTimeoutFor(action) {
   return API_TIMEOUTS[action] || API_TIMEOUTS.default;
@@ -381,7 +428,8 @@ async function apiCall(action, data=null) {
         ...(data || {})
       };
     }
-    const url = `${API}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
+    const endpoint = apiEndpointForAction(action);
+    const url = `${endpoint}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
     const maxAttempts = API_RETRY_ACTIONS.has(action) ? API_RETRY_DELAYS.length + 1 : 1;
     const fetchWithTimeout = async (endpoint, options={}) => {
       const controller = new AbortController();
@@ -404,7 +452,7 @@ async function apiCall(action, data=null) {
         };
       } catch (err) {
         return {
-          error: `Google Sheets returned ${response.status || "a non-JSON response"} while running ${action}`,
+          error: `${endpoint === WORKER_API ? "Dispatch Worker" : "Google Sheets"} returned ${response.status || "a non-JSON response"} while running ${action}`,
           detail: text.slice(0, 180),
           httpStatus: response.status,
           retryable: response.status === 404 || response.status === 429 || response.status >= 500
@@ -590,6 +638,48 @@ async function uploadContactSheetVariant({orderNumber,uploadNonce,sheet,variant,
   const blob = variant === "story" ? sheet.storyBlob : sheet.deliveryBlob;
   if (!(blob instanceof Blob)) throw new Error(`Missing ${variant} JPEG for ${sheet.filmName}`);
 
+  if (API_MODE === "supabase") {
+    const params = new URLSearchParams({
+      action:"uploadContactSheetFile",
+      orderNumber,
+      uploadNonce,
+      rollIndex:String(sheet.rollIndex),
+      variant,
+      _:String(Date.now())
+    });
+    let response;
+    let lastError = null;
+    for (let attempt=0; attempt<API_RETRY_DELAYS.length+1; attempt+=1) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), apiTimeoutFor("completeContactSheetUpload"));
+        try {
+          response = await fetch(`${WORKER_API}?${params.toString()}`, {
+            method:"POST",
+            cache:"no-store",
+            headers:{"Content-Type":"image/jpeg"},
+            body:blob,
+            signal:controller.signal
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (response.ok || !(response.status === 429 || response.status >= 500)) break;
+      } catch(error) {
+        lastError = error;
+      }
+      if (attempt < API_RETRY_DELAYS.length) await apiRetryDelay(attempt);
+    }
+    if (!response) {
+      throw new Error(lastError?.message || "Could not reach contact-sheet storage");
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.error || !result?.fileUrl) {
+      throw new Error(result?.error || `Upload failed (${response.status})`);
+    }
+    return result.fileUrl;
+  }
+
   const uploadTicket = ticket || await apiCall("createContactSheetUploadTicket", {
     orderNumber,
     uploadNonce,
@@ -667,7 +757,7 @@ function restoreOrderNumbers(orders) {
 const deliveryUrl = o => {
   if (!o || typeof o !== 'object') return BASE_URL;
   const orderNum = (o.orderNumber || "").toString();
-  const name     = (o.customerName || "Customer").toString();
+  const name     = (o.deliveryName || o.deliveryDisplayName || o.customerName || "Customer").toString();
   const film     = (o.deliveryFilm || o.film || "").toString();
   const link     = (o.driveLink || "").toString();
   const sheetMode = Array.isArray(o.contactSheets) ? (o.contactSheets.length ? "1" : "0") : "";
@@ -822,19 +912,31 @@ async function getShortLink(longUrl) {
 }
 const css = {
   btn: (variant="primary") => ({
-    padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"'Montserrat',sans-serif",
-    fontSize:10, fontWeight:600, letterSpacing:"0.2em", textTransform:"uppercase",
-    transition:"all 0.2s", cursor:"pointer",
-    ...(variant==="primary" ? {background:"var(--white)", color:"var(--black)"} :
-        variant==="blue"    ? {background:"var(--ocean)", color:"var(--white)", border:"1px solid var(--blue)"} :
-        variant==="ghost"   ? {background:"var(--card2)", color:"var(--light)", border:"1px solid var(--border2)"} :
+    padding:"11px 20px", borderRadius:2, border:"none", fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",
+    fontSize:10, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase",
+    transition:"all 0.18s ease", cursor:"pointer",
+    ...(variant==="primary" ? {background:"var(--white)", color:"var(--black)", boxShadow:"0 8px 20px rgba(0,0,0,0.18)"} :
+        variant==="blue"    ? {background:"linear-gradient(180deg,var(--blue),var(--ocean))", color:"var(--on-blue)", border:"1px solid var(--blue-l)", boxShadow:"0 0 0 1px rgba(47,156,255,0.12),0 10px 22px rgba(0,87,184,0.16)"} :
+        variant==="ghost"   ? {background:"var(--ghost-bg)", color:"var(--light)", border:"1px solid var(--border2)"} :
         variant==="green"   ? {background:"var(--greenD)", color:"var(--greenT)", border:"1px solid var(--greenB)"} :
         variant==="danger"  ? {background:"none", color:"#5a2a22", border:"1px solid var(--border)"} : {})
   }),
-  card: {background:"var(--card)", border:"1px solid var(--border)", borderRadius:3, padding:24},
+  card: {background:"linear-gradient(180deg,var(--card),var(--dark))", border:"1px solid var(--border)", borderRadius:2, padding:24, boxShadow:"0 18px 42px rgba(0,0,0,0.18)"},
   label: {fontSize:9, letterSpacing:"0.35em", textTransform:"uppercase", color:"var(--muted)", marginBottom:8, display:"block"},
   secLabel: {fontSize:9, letterSpacing:"0.4em", textTransform:"uppercase", color:"var(--muted)", marginBottom:16, display:"block"},
 };
+
+function downloadCsvFile(file) {
+  const blob = new Blob([file.content || ""], {type:file.mimeType || "text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.fileName || "saujana-export.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function Toast({msg}) {
   return msg ? (
@@ -844,6 +946,131 @@ function Toast({msg}) {
       {msg}
     </div>
   ) : null;
+}
+
+function ExportDataButton() {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  if (API_MODE !== "supabase") return null;
+
+  async function runExport() {
+    if (!pw.trim() || exporting) return;
+    setExporting(true);
+    setError("");
+    setDone(false);
+    try {
+      const res = requireApiSuccess(
+        await apiCall("exportData", {adminKey:pw}),
+        "Could not export data"
+      );
+      const nextFiles = Array.isArray(res.files) ? res.files : [];
+      if (!nextFiles.length) throw new Error("No export files were returned");
+      setFiles(nextFiles);
+      nextFiles.forEach((file, index) => {
+        setTimeout(() => downloadCsvFile(file), index * 250);
+      });
+      setPw("");
+      setDone(true);
+    } catch(e) {
+      setError(e?.message || "Export failed");
+    }
+    setExporting(false);
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          setOpen(true);
+          setError("");
+          setDone(false);
+        }}
+        style={{
+          ...css.btn("ghost"),
+          display:"inline-flex",
+          alignItems:"center",
+          justifyContent:"center",
+          gap:7,
+          padding:"7px 13px",
+          fontSize:9,
+          fontWeight:800,
+          letterSpacing:"0.04em",
+          textTransform:"none",
+          background:"var(--card2)",
+          color:"var(--gold-l)",
+          border:"1px solid var(--gold-l)",
+          boxShadow:"0 0 0 1px rgba(200,146,42,.16), 0 0 18px rgba(200,146,42,.24)",
+          minWidth:190
+        }}
+      >
+        <span aria-hidden="true" style={{fontSize:12,lineHeight:1}}>🚀</span>
+        <span>Export Data to Sheets</span>
+      </button>
+      {open && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:1000,
+                     display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{width:"100%",maxWidth:460,background:"linear-gradient(180deg,var(--card),var(--dark))",border:"1px solid var(--border)",
+                       borderRadius:2,padding:24,boxShadow:"0 24px 70px rgba(0,0,0,.42)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start",marginBottom:18}}>
+              <div>
+                <span style={css.secLabel}>Export Data to Sheets</span>
+                <div style={{fontSize:11,color:"var(--muted)",lineHeight:1.6}}>
+                  Sheets, here we go again. Gotta know the passcode tho 😉
+                </div>
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                style={{...css.btn("ghost"),padding:"6px 10px",fontSize:10}}
+                aria-label="Close export dialog"
+              >
+                ×
+              </button>
+            </div>
+
+            <input
+              type="password"
+              value={pw}
+              onChange={e=>setPw(e.target.value)}
+              onKeyDown={e=>e.key==="Enter" && runExport()}
+              disabled={exporting}
+              placeholder="Enter le passcode broski"
+              style={{marginBottom:10}}
+            />
+            {error && <div style={{fontSize:11,color:"var(--red)",lineHeight:1.5,marginBottom:10}}>{error}</div>}
+            {done && <div style={{fontSize:11,color:"var(--greenT)",lineHeight:1.5,marginBottom:10}}>Export ready. If your browser blocked multiple downloads, use the buttons below.</div>}
+
+            <button
+              onClick={runExport}
+              disabled={exporting || !pw.trim()}
+              style={{...css.btn("blue"),width:"100%",padding:12,opacity:exporting || !pw.trim()?0.6:1}}
+            >
+              {exporting ? "Exporting..." : "Download CSV Files"}
+            </button>
+
+            {files.length > 0 && (
+              <div style={{display:"grid",gap:8,marginTop:14}}>
+                {files.map(file => (
+                  <button
+                    key={file.fileName}
+                    onClick={() => downloadCsvFile(file)}
+                    style={{...css.btn("ghost"),padding:"9px 11px",fontSize:9,display:"flex",justifyContent:"space-between",gap:12}}
+                  >
+                    <span>{file.label}</span>
+                    <span>{Number(file.rowCount) || 0} rows</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function DeliveryThemePreview({
@@ -1059,7 +1286,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [publishStage, setPublishStage] = useState("");
   const [skipContactSheets, setSkipContactSheets] = useState(false);
   const [excludedRolls, setExcludedRolls] = useState([]);
-  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+  const [loadedPastOrder, setLoadedPastOrder] = useState(false);
   const [previewRoll, setPreviewRoll] = useState(0);
   const dropRef = useRef();
 
@@ -1092,7 +1319,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setPublishStage("");
     setSkipContactSheets(false);
     setExcludedRolls([]);
-    setGuidelinesOpen(false);
+    setLoadedPastOrder(false);
     setPreviewRoll(0);
   }
 
@@ -1102,6 +1329,7 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
 
   useEffect(() => {
     if (prefill) {
+      setLoadedPastOrder(false);
       setSelCust(prefill);
       setCustInput(prefill.name || "");
       setDeliveryName(prefill.name || "");
@@ -1327,6 +1555,7 @@ function addRoll() {
       const orderPayload = {
         ...deliveryOrder,
         orderNumberText:deliveryOrder.orderNumber,
+        deliveryName:name,
         customerName:registryName,
         customerId:selCust?.id || ""
       };
@@ -1446,7 +1675,7 @@ function addRoll() {
     const html = `<p>Hi <strong>${r.custName}</strong>! Your scans are ready 🎞️</p><br><p><strong>Order Number: ${r.orderNumber}</strong></p><br><p>Please click the link below to access your scans:</p><br><p><a href="${r.url}"><strong>Get your scans here →</strong></a></p><br><p>Link active for <strong>7 days</strong>. Quote order number when collecting negatives.</p><br><p>Questions? <a href="https://wa.me/6282251318377"><strong>WhatsApp: +62 822 5131 8377</strong></a></p><br><p>Kind regards,<br><strong>Saujana Film Lab</strong><br>Bali, Indonesia</p>`;
     const htmlWithNotes = html.replace("</strong></p><br><p>Please click", `</strong></p>${emailNotesHtml(r)}<br><p>Please click`);
     await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([htmlWithNotes],{type:"text/html"})})]);
-    showToast("Rich email copied - paste into Gmail!");
+    showToast("Email copied ✓");
   }
 
   function openGmail() {
@@ -1602,6 +1831,7 @@ Saujana Film Lab Bali`;
         deliveryTheme:pastDeliveryTheme,
         deliveryDate:pastDeliveryDate
     });
+    setLoadedPastOrder(true);
     
     setCopied({});
     showToast("Memories Digged! ✓");
@@ -1614,16 +1844,9 @@ Saujana Film Lab Bali`;
       {/* Form */}
       <div className="dispatch-sidebar">
         <div style={css.card}>
-          <span style={css.secLabel}>New Order</span>
-          <button className="guidelines-toggle" type="button" aria-expanded={guidelinesOpen} onClick={()=>setGuidelinesOpen(open=>!open)}>
-            Order guidelines <span>{guidelinesOpen?"−":"+"}</span>
-          </button>
-          {guidelinesOpen && <div className="dispatch-flow" aria-label="Order guidelines">
-            <div className="dispatch-flow-step"><strong>01</strong><span>Fill the form as usual: name, email, Drive link, and roll details.</span></div>
-            <div className="dispatch-flow-step"><strong>02</strong><span>Add scans on the right.</span></div>
-            <div className="dispatch-flow-step"><strong>03</strong><span>Prepare each contact sheet and review the previews.</span></div>
-            <div className="dispatch-flow-step"><strong>04</strong><span>Publish and generate the delivery link.</span></div>
-          </div>}
+          <span style={{...css.secLabel,fontSize:13,fontWeight:800,letterSpacing:"0.16em",color:"var(--gold-l)",marginBottom:18}}>
+            {loadedPastOrder ? "Past Order" : "New Order"}
+          </span>
 
           {/* Order number */}
           <div style={{marginBottom:18}}>
@@ -1720,12 +1943,7 @@ Saujana Film Lab Bali`;
 
           {/* Email */}
 <div style={{marginBottom:18}}>
-  <label style={css.label}>
-    Customer Email
-    <span style={{color:"var(--dim)",fontSize:9}}>
-      for Gmail
-    </span>
-  </label>
+  <label style={css.label}>Customer Email</label>
 
   <input
     value={custEmail}
@@ -1866,10 +2084,10 @@ Saujana Film Lab Bali`;
               ))}
             </div>
             <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
-              <label style={css.label}>
-                Delivery Roll Details
-                <span style={{color:"var(--dim)",fontSize:8,marginLeft:5}}>(optional customer-facing summary)</span>
-              </label>
+              <label style={{...css.label,marginBottom:4}}>Delivery Roll Details</label>
+              <div style={{fontSize:8.5,color:"var(--dim)",lineHeight:1.55,marginBottom:8}}>
+                optional - fill if you want to change the details
+              </div>
               <input
                 value={deliveryRollDetails}
                 onChange={e=>setDeliveryRollDetails(e.target.value)}
@@ -1902,7 +2120,7 @@ Saujana Film Lab Bali`;
                       background:selected?option.surface:"var(--dark)",
                       border:`1px solid ${selected?option.accent:"var(--border)"}`,
                       color:selected?option.paper:"var(--muted)",
-                      fontFamily:"'Montserrat',sans-serif",
+                      fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",
                       fontSize:8,
                       fontWeight:selected?700:500,
                       letterSpacing:".08em",
@@ -2108,15 +2326,15 @@ Saujana Film Lab Bali`;
                 <strong style={{color:"var(--white)"}}>Saujana Film Lab</strong><br/>Bali, Indonesia
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <button onClick={copyRich} style={{...css.btn(),padding:11}}>Copy for Gmail</button>
-                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Open in Gmail ↗</button>
+                <button onClick={copyRich} style={{...css.btn(),padding:11}}>Copy Email</button>
+                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Open Email ↗</button>
               </div>
             </div>
           </>
         ) : (
           <div style={{...css.card,minHeight:220,display:"flex",alignItems:"center",
                        justifyContent:"center",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontStyle:"italic",color:"var(--dim)"}}>
+            <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:24,fontWeight:800,color:"var(--dim)"}}>
               Ready to dispatch
             </div>
             <div style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.3em",textTransform:"uppercase"}}>
@@ -2146,8 +2364,8 @@ Saujana Film Lab Bali`;
                   background:"var(--dark)",border:"1px solid var(--border)",borderRadius:2}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:14,
-                        color:"var(--white)",letterSpacing:"0.05em"}}>{o.orderNumber}</span>
+                      <span style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:13,fontWeight:800,
+                        color:"var(--white)",letterSpacing:"0.04em"}}>{o.orderNumber}</span>
                       <span style={{fontSize:11,color:"var(--muted)"}}>{o.customerName}</span>
                     </div>
                     <div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>
@@ -2275,7 +2493,7 @@ async function updateCustomerInfo() {
         <div style={{display:"flex",gap:6}}>
           {[{id:"name",l:"A-Z"},{id:"orders",l:"Most Orders"},{id:"recent",l:"Recent"}].map(s=>(
             <button key={s.id} onClick={()=>{setSortBy(s.id); setPage(1);}} style={{
-              flex:1,padding:7,background:"none",fontFamily:"'Montserrat',sans-serif",
+              flex:1,padding:7,background:"none",fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",
               border:`1px solid ${sortBy===s.id?"var(--blue-l)":"var(--border)"}`,borderRadius:2,
               color:sortBy===s.id?"var(--blue-l)":"var(--muted)",
               fontSize:9,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",
@@ -2318,7 +2536,7 @@ async function updateCustomerInfo() {
         <div style={{flex:1,overflowY:"auto"}}>
           {filtered.length===0 ? (
             <div style={{textAlign:"center",padding:"40px 20px"}}>
-              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontStyle:"italic",color:"var(--dim)",marginBottom:8}}>
+              <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:22,fontWeight:800,color:"var(--dim)",marginBottom:8}}>
                 {search?"No results":"Empty"}
               </div>
               <div style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.2em",textTransform:"uppercase"}}>
@@ -2334,7 +2552,7 @@ async function updateCustomerInfo() {
               <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                    <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:15,fontStyle:"italic",
+                    <span style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:14,fontWeight:800,
                       color:selected?.id===c.id?"var(--blue-l)":"var(--white)"}}>{c.name}</span>
                     {c.totalOrders>0&&<span className="day-accent" style={{fontSize:9,background:"var(--ocean)",color:"var(--white)",
                       padding:"2px 8px",borderRadius:10,fontWeight:700}}>{c.totalOrders}×</span>}
@@ -2381,7 +2599,7 @@ async function updateCustomerInfo() {
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
               <div>
-                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,fontStyle:"italic",color:"var(--white)"}}>
+                <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:24,fontWeight:800,color:"var(--white)"}}>
                   {selected.name}
                 </div>
                 <div style={{fontSize:12,color:"var(--muted)",marginTop:4}}>{selected.email}</div>
@@ -2404,8 +2622,8 @@ async function updateCustomerInfo() {
                 {l:"Member Since",v:fmtDate(selected.createdAt)}].map(s=>(
                 <div key={s.l} style={{flex:1,background:"var(--dark)",border:"1px solid var(--border)",
                                        borderRadius:2,padding:"12px 14px",textAlign:"center"}}>
-                  <div style={{fontSize:20,fontWeight:700,color:"var(--blue-l)",
-                               fontFamily:"'Cormorant Garamond',serif"}}>{s.v}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:"var(--blue-l)",
+                               fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif"}}>{s.v}</div>
                   <div style={{fontSize:9,color:"var(--muted)",letterSpacing:"0.2em",
                                textTransform:"uppercase",marginTop:4}}>{s.l}</div>
                 </div>
@@ -2423,8 +2641,8 @@ async function updateCustomerInfo() {
                   borderLeft:"3px solid var(--blue)",borderRadius:2,marginBottom:6}}>
                   <div style={{flex:1}}>
                     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                      <span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:14,
-                        color:"var(--white)",letterSpacing:"0.05em"}}>{o.orderNumber}</span>
+                      <span style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:13,fontWeight:800,
+                        color:"var(--white)",letterSpacing:"0.04em"}}>{o.orderNumber}</span>
                       <span style={{fontSize:11,color:"var(--muted)"}}>{o.film}</span>
                     </div>
                     <div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>{fmtDT(o.createdAt)}</div>
@@ -2442,7 +2660,7 @@ async function updateCustomerInfo() {
         ) : (
           <div style={{...css.card,height:"100%",display:"flex",flexDirection:"column",gap:18}}>
             <div>
-              <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,fontStyle:"italic",color:"var(--white)"}}>
+              <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:24,fontWeight:800,color:"var(--white)"}}>
                 Recently Added
               </div>
               <div style={{fontSize:9,color:"var(--dim)",letterSpacing:"0.3em",textTransform:"uppercase",marginTop:4}}>
@@ -2461,7 +2679,7 @@ async function updateCustomerInfo() {
                   display:"flex",alignItems:"center",gap:12}}>
                   <button onClick={()=>setSelected(c)}
                     style={{flex:1,background:"none",border:"none",textAlign:"left",cursor:"pointer",padding:0}}>
-                    <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,fontStyle:"italic",color:"var(--white)"}}>
+                    <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:14,fontWeight:800,color:"var(--white)"}}>
                       {c.name || "Unnamed Customer"}
                     </div>
                     <div style={{fontSize:11,color:"var(--muted)",marginTop:3}}>
@@ -2558,7 +2776,8 @@ function App() {
       ok = true;
     } catch (err) {
       console.error("LOAD ERROR:", err);
-      setLoadError(`Could not load Google Sheets: ${err.message || err}. Wait a moment, then reopen the app.`);
+      const sourceName = API_MODE === "supabase" ? "Dispatch Worker" : "Google Sheets";
+      setLoadError(`Could not load ${sourceName}: ${err.message || err}. Wait a moment, then reopen the app.`);
     } finally {
       setLoading(false);
       setSyncing(false);
@@ -2646,12 +2865,13 @@ function App() {
       )}
       {/* Header */}
       <div style={{background:"var(--dark)",borderBottom:"1px solid var(--border)",
-                   padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+                   padding:"0 24px",position:"sticky",top:0,zIndex:100,backdropFilter:"blur(14px)",
+                   boxShadow:"0 14px 34px rgba(0,0,0,0.22)"}}>
         <div style={{maxWidth:1500,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14}}>
             <div>
               <img className="brand-logo" src="dd-horizontal.png" alt="Darkroom Dispatch Logo" style={{height:45, objectFit:"contain", display:"block"}}/>
-              <div style={{fontSize:8,letterSpacing:"0.4em",textTransform:"uppercase",color:"var(--muted)",marginTop:8}}>
+              <div style={{fontSize:8,letterSpacing:"0.3em",textTransform:"uppercase",color:"var(--muted)",marginTop:8}}>
                 Film Lab Bali · Operations
               </div>
             </div>
@@ -2681,14 +2901,17 @@ function App() {
               </div>
             </div>
           </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+            <ExportDataButton/>
+          </div>
           <div style={{display:"flex",marginTop:10}}>
             {[{id:"dispatch",l:"Darkroom Dispatch"},{id:"registry",l:"Customer Registry"},{id:"stock",l:"Stock Count"}].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{
                 padding:"10px 24px",background:"none",
                 border:"none",borderBottom:`2px solid ${tab===t.id?"var(--blue-l)":"transparent"}`,
                 color:tab===t.id?"var(--white)":"var(--muted)",
-                fontFamily:"'Montserrat',sans-serif",fontSize:10,
-                fontWeight:tab===t.id?500:300,letterSpacing:"0.2em",textTransform:"uppercase",cursor:"pointer",
+                fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:10,
+                fontWeight:tab===t.id?700:500,letterSpacing:"0.12em",textTransform:"uppercase",cursor:"pointer",
               }}>{t.l}</button>
             ))}
           </div>
@@ -2706,7 +2929,7 @@ function App() {
         {loading ? (
           <div style={{textAlign:"center",padding:80,fontSize:11,letterSpacing:"0.3em",
                        textTransform:"uppercase",color:"var(--dim)"}}>
-            Connecting to Google Sheets...
+            Connecting to {API_MODE === "supabase" ? "Dispatch Worker..." : "Google Sheets..."}
           </div>
         ) : tab==="dispatch" ? (
           <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
@@ -2836,6 +3059,25 @@ function StockTracker() {
       visible: item.visible !== false
     }))
   }));
+  const stockCategoryRank = category => {
+    const name = String(category || "").toUpperCase();
+    if (name.includes("COLOR") && name.includes("35")) return 10;
+    if ((name.includes("BW") || name.includes("B&W") || name.includes("BLACK")) && name.includes("35")) return 20;
+    if (name.includes("120")) return 30;
+    if (name.includes("110")) return 40;
+    if (name.includes("FILM")) return 50;
+    if (name.includes("CAMERA")) return 80;
+    if (name.includes("BATTER")) return 90;
+    return 70;
+  };
+  const orderedStockEntries = (categories=stock) => (categories || [])
+    .map((cat, catIdx) => ({cat, catIdx}))
+    .sort((a, b) => {
+      const rankDiff = stockCategoryRank(a.cat.category) - stockCategoryRank(b.cat.category);
+      if (rankDiff) return rankDiff;
+      return String(a.cat.category || "").localeCompare(String(b.cat.category || ""));
+    });
+  const orderedStock = categories => orderedStockEntries(categories).map(entry => entry.cat);
 
   // Load stock from Sheets
   useEffect(() => { loadStock(); loadStockHistory(); }, []);
@@ -2953,7 +3195,7 @@ function StockTracker() {
     const dateStr = `${day} ${month} ${year}`;
 
     let lines = [`${dateStr}`, ``];
-    sourceStock.forEach(cat => {
+    orderedStock(sourceStock).forEach(cat => {
       const visibleItems = (cat.items || []).filter(item => item.visible !== false);
       if (visibleItems.length === 0) return;
       if (lines.length > 2) lines.push(``);
@@ -3225,7 +3467,7 @@ function StockTracker() {
       {/* Header row */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div>
-          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:28,fontStyle:"italic",color:"var(--white)"}}>
+          <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:24,fontWeight:800,color:"var(--white)",letterSpacing:"0.02em"}}>
             Stock Count
           </div>
           <div style={{fontSize:9,letterSpacing:"0.35em",textTransform:"uppercase",color:"var(--muted)",marginTop:4}}>
@@ -3250,7 +3492,7 @@ function StockTracker() {
 
       {/* Stock grid */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))",gap:12,marginBottom:16}}>
-        {stock.map((cat, catIdx) => {
+        {orderedStockEntries().map(({cat, catIdx}) => {
           const hasVisibleItems = (cat.items || []).some(item => item.visible !== false);
           const isEmptyCategory = !cat.items || cat.items.length === 0;
           const isAddingToCategory = addingTo === cat.category;
@@ -3258,9 +3500,9 @@ function StockTracker() {
           return (
           <div key={catIdx} style={{...css.card,padding:0,overflow:"hidden"}}>
             {/* Category header */}
-            <div style={{background:"var(--card2)",borderBottom:"1px solid var(--border)",
+            <div style={{background:"linear-gradient(90deg,var(--blue-gl),var(--card2))",borderBottom:"1px solid var(--border)",
                          padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span className="stock-heading" style={{fontSize:10,fontWeight:600,letterSpacing:"0.3em",
+              <span className="stock-heading" style={{fontSize:10,fontWeight:800,letterSpacing:"0.2em",
                             textTransform:"uppercase",color:"var(--blue-l)"}}>{cat.category}</span>
               <button className="day-accent" onClick={()=>setAddingTo(addingTo===cat.category?null:cat.category)}
                 style={{background:"none",border:"none",color:"var(--muted)",
@@ -3352,9 +3594,9 @@ function StockTracker() {
       {/* Stock history */}
       <div style={{...css.card,marginBottom:16,padding:0,overflow:"hidden"}}>
         <button onClick={()=>{setHistoryOpen(v=>!v); if (!historyOpen) loadStockHistory();}}
-          style={{width:"100%",background:"var(--card2)",border:"none",borderBottom:historyOpen?"1px solid var(--border)":"none",
+          style={{width:"100%",background:"linear-gradient(90deg,var(--blue-gl),var(--card2))",border:"none",borderBottom:historyOpen?"1px solid var(--border)":"none",
                   padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.3em",textTransform:"uppercase",color:"var(--blue-l)"}}>
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.2em",textTransform:"uppercase",color:"var(--blue-l)"}}>
             Stock History
           </span>
           <span style={{fontSize:18,color:"var(--muted)",lineHeight:1}}>{historyOpen?"-":"+"}</span>
@@ -3424,7 +3666,7 @@ function StockTracker() {
                             {block.label}
                           </div>
                           <div style={{maxHeight:220,overflowY:"auto",border:"1px solid var(--border)",borderRadius:2,padding:10}}>
-                            {block.data.map(cat => (
+                            {orderedStock(block.data).map(cat => (
                               <div key={cat.category} style={{marginBottom:10}}>
                                 <div style={{fontSize:10,color:"var(--blue-l)",fontWeight:700,letterSpacing:"0.16em",textTransform:"uppercase",marginBottom:5}}>
                                   {cat.category}
@@ -3504,7 +3746,7 @@ function StockTracker() {
             </div>
 
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {stock.flatMap((cat, catIdx) => (cat.items || [])
+              {orderedStockEntries().flatMap(({cat, catIdx}) => (cat.items || [])
                 .map((item, itemIdx) => ({cat, catIdx, item, itemIdx}))
                 .filter(({cat, item}) => {
                   const q = manageSearch.trim().toLowerCase();
@@ -3571,7 +3813,7 @@ function StockTracker() {
             </button>
           </div>
           <pre style={{fontSize:13,lineHeight:1.9,color:"var(--white)",
-                       fontFamily:"'Montserrat',sans-serif",whiteSpace:"pre-wrap",
+                       fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",whiteSpace:"pre-wrap",
                        background:"var(--dark)",border:"1px solid var(--border)",
                        borderRadius:2,padding:16}}>
             {report}

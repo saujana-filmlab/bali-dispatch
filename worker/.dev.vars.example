@@ -1,0 +1,8 @@
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SCHEMA=public
+CONTACT_SHEETS_ADMIN_KEY=staff-admin-key-used-in-dispatch
+CONTACT_SHEETS_WORKER_URL=https://saujana-contact-sheets-api.saujanalab-bali.workers.dev
+CONTACT_SHEETS_WORKER_SECRET=contact-sheet-worker-server-secret
+CONTACT_SHEETS_UPLOAD_SIGNING_KEY=random-long-private-signing-key
+DISPATCH_PUBLIC_ORIGIN=https://bali-darkroom.saujanalab.com

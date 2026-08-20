@@ -415,7 +415,13 @@
   <div id="root"></div>
   <script type="text/babel">
     const {useMemo, useState} = React;
-    const API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
+    const LEGACY_API = "https://script.google.com/macros/s/AKfycbyCCkm0VIH6jsuj6T68KktBiHgE3IKnDQEOgEogRExKxmQ4WHXaW9wK4C9gZ2hhlfk/exec";
+    const WORKER_API = window.location.hostname === "127.0.0.1"
+      ? "http://127.0.0.1:8799"
+      : "https://bali-dispatch-api.saujanalab-bali.workers.dev";
+    const API_MODE_PARAM = new URLSearchParams(window.location.search).get("api");
+    const API = API_MODE_PARAM === "legacy" ? LEGACY_API : WORKER_API;
+    const API_NAME = API === WORKER_API ? "Dispatch Worker" : "Google Sheets";
 
     async function apiCall(action, data) {
       try {
@@ -430,7 +436,7 @@
         try {
           return JSON.parse(text);
         } catch(e) {
-          return {error: "Unexpected Google Sheets response"};
+          return {error: `Unexpected ${API_NAME} response`};
         }
       } catch(e) {
         return {error: e.toString()};

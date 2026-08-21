@@ -1026,15 +1026,15 @@ function ExportDataButton() {
         <span aria-hidden="true" style={{fontSize:12,lineHeight:1}}>🚀</span>
         <span>EXPORT DATA TO SHEETS</span>
       </button>
-      {open && (
+      {open && ReactDOM.createPortal((
         <div
           onMouseDown={event => {
             if (event.target === event.currentTarget) closeExport();
           }}
           style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:1000,
-                  display:"grid",placeItems:"center",padding:20,overflowY:"auto"}}
+                  padding:20,overflowY:"auto"}}
         >
-          <div style={{width:"100%",maxWidth:460,background:"linear-gradient(180deg,var(--card),var(--dark))",border:"1px solid var(--border)",
+          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100vw - 40px)",maxWidth:460,background:"linear-gradient(180deg,var(--card),var(--dark))",border:"1px solid var(--border)",
                        borderRadius:2,padding:24,boxShadow:"0 24px 70px rgba(0,0,0,.42)",maxHeight:"calc(100vh - 40px)",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start",marginBottom:18}}>
               <div>
@@ -1097,9 +1097,16 @@ function ExportDataButton() {
                 ))}
               </div>
             )}
+
+            <button
+              onClick={closeExport}
+              style={{...css.btn("ghost"),width:"100%",padding:11,marginTop:14,fontSize:9}}
+            >
+              CLOSE
+            </button>
           </div>
         </div>
-      )}
+      ), document.body)}
     </>
   );
 }

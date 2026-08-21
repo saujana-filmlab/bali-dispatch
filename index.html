@@ -956,6 +956,20 @@ function ExportDataButton() {
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
 
+  function closeExport() {
+    setOpen(false);
+    setError("");
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = event => {
+      if (event.key === "Escape") closeExport();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, exporting]);
+
   if (API_MODE !== "supabase") return null;
 
   async function runExport() {
@@ -1013,20 +1027,36 @@ function ExportDataButton() {
         <span>EXPORT DATA TO SHEETS</span>
       </button>
       {open && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:1000,
-                     display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeExport();
+          }}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:1000,
+                  display:"grid",placeItems:"center",padding:20,overflowY:"auto"}}
+        >
           <div style={{width:"100%",maxWidth:460,background:"linear-gradient(180deg,var(--card),var(--dark))",border:"1px solid var(--border)",
-                       borderRadius:2,padding:24,boxShadow:"0 24px 70px rgba(0,0,0,.42)"}}>
+                       borderRadius:2,padding:24,boxShadow:"0 24px 70px rgba(0,0,0,.42)",maxHeight:"calc(100vh - 40px)",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start",marginBottom:18}}>
               <div>
-                <span style={css.secLabel}>Export Data to Sheets</span>
+                <span style={css.secLabel}>EXPORT DATA TO SHEETS</span>
                 <div style={{fontSize:11,color:"var(--muted)",lineHeight:1.6}}>
                   Sheets, here we go again. Gotta know the passcode tho 😉
                 </div>
               </div>
               <button
-                onClick={() => setOpen(false)}
-                style={{...css.btn("ghost"),padding:"6px 10px",fontSize:10}}
+                onClick={closeExport}
+                style={{
+                  ...css.btn("ghost"),
+                  flex:"0 0 auto",
+                  width:34,
+                  height:34,
+                  padding:0,
+                  fontSize:18,
+                  lineHeight:1,
+                  display:"inline-flex",
+                  alignItems:"center",
+                  justifyContent:"center"
+                }}
                 aria-label="Close export dialog"
               >
                 ×

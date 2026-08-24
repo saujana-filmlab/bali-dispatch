@@ -7,7 +7,11 @@ function csgFileName(file) {
 }
 
 function csgSupportedFile(file) {
-  return CSG_ALLOWED.test(csgFileName(file)) || /image\/(jpeg|tiff)/i.test(file.type);
+  return CSG_ALLOWED.test(csgFileName(file)) || /image\/(jpeg|tiff|x-tiff)/i.test(file.type);
+}
+
+function csgIsTiffFile(file) {
+  return /\.tiff?$/i.test(csgFileName(file)) || /image\/(tiff|x-tiff)/i.test(file.type);
 }
 
 function csgSortFiles(files) {
@@ -208,6 +212,58 @@ function csgCanvasBlob(canvas, quality=.86) {
   return new Promise((resolve,reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("JPEG export failed")),"image/jpeg",quality));
 }
 
+async function csgBitmapToPreparedBlob(bitmap) {
+  const maxSide = 1800;
+  const scale = Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1,Math.round(bitmap.width*scale));
+  canvas.height = Math.max(1,Math.round(bitmap.height*scale));
+  const ctx = canvas.getContext("2d",{colorSpace:"srgb"});
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+  if (typeof bitmap.close === "function") bitmap.close();
+  return csgCanvasBlob(canvas,.88);
+}
+
+async function csgTiffToPreparedBlob(file) {
+  if (!window.UTIF) {
+    throw new Error("TIFF decoder is still loading. Wait a moment and try again.");
+  }
+  const buffer = await file.arrayBuffer();
+  const ifds = UTIF.decode(buffer);
+  const image = ifds && ifds[0];
+  if (!image) throw new Error("No image was found inside this TIFF file.");
+  UTIF.decodeImage(buffer,image);
+  const rgba = UTIF.toRGBA8(image);
+  const width = Number(image.width) || Number(image.t256 && image.t256[0]);
+  const height = Number(image.height) || Number(image.t257 && image.t257[0]);
+  if (!width || !height || !rgba) throw new Error("This TIFF file could not be decoded.");
+
+  const source = document.createElement("canvas");
+  source.width = width;
+  source.height = height;
+  source.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgba),width,height),0,0);
+
+  const maxSide = 1800;
+  const scale = Math.min(1,maxSide/Math.max(width,height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1,Math.round(width*scale));
+  canvas.height = Math.max(1,Math.round(height*scale));
+  const ctx = canvas.getContext("2d",{colorSpace:"srgb"});
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+  return csgCanvasBlob(canvas,.88);
+}
+
+async function csgFileToPreparedBlob(file) {
+  try {
+    return await csgBitmapToPreparedBlob(await createImageBitmap(file,{imageOrientation:"from-image"}));
+  } catch (error) {
+    if (csgIsTiffFile(file)) return csgTiffToPreparedBlob(file);
+    throw error;
+  }
+}
+
 function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null }) {
   const availableRolls = React.useMemo(() => linkedRolls.map(value=>String(value||"").trim()).filter(Boolean), [linkedRolls]);
   const [selectedRoll,setSelectedRoll] = React.useState(0);
@@ -290,14 +346,9 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       const current = startAt+i+1;
       setPrepareCount({current,total});
       setProgress(`${folderName ? `${folderName} · ` : ""}Preparing frame ${i+1} of ${files.length}`);
-      let bitmap;
-      try { bitmap = await createImageBitmap(files[i],{imageOrientation:"from-image"}); }
-      catch { throw new Error(`${files[i].name} could not be decoded. TIFF support depends on the browser; export it as JPEG if needed.`); }
-      const maxSide = 1800;
-      const scale = Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
-      const canvas = document.createElement("canvas"); canvas.width=Math.round(bitmap.width*scale); canvas.height=Math.round(bitmap.height*scale);
-      const ctx = canvas.getContext("2d",{colorSpace:"srgb"}); ctx.imageSmoothingQuality="high"; ctx.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
-      const blob = await csgCanvasBlob(canvas,.88);
+      let blob;
+      try { blob = await csgFileToPreparedBlob(files[i]); }
+      catch(err) { throw new Error(`${files[i].name} could not be decoded. ${err.message || "Export it as JPEG if needed."}`); }
       prepared.push({name:csgFileName(files[i]),blob});
       await new Promise(resolve=>setTimeout(resolve,0));
     }

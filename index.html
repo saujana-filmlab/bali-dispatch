@@ -1728,12 +1728,19 @@ function addRoll() {
     .map(email => String(email || "").trim())
     .filter(Boolean)
     .join(",");
+  const emailRecipientsForMailto = () => emailRecipients()
+    .split(",")
+    .filter(Boolean)
+    .map(email => encodeURIComponent(email))
+    .join(",");
+  const deliveryEmailText = (r, includeSignature) =>
+    `Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}${emailNotesText(r)}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377${includeSignature ? "\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia" : ""}`;
 
   function sendWithGmailSignature() {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = `Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}${emailNotesText(r)}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377`;
+    const body = deliveryEmailText(r, false);
     const recipients = emailRecipients();
     navigator.clipboard.writeText(body).then(
       () => showToast("Email text copied. Paste it above the signature ✓"),
@@ -1746,9 +1753,9 @@ function addRoll() {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}${emailNotesText(r)}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
-    const recipients = emailRecipients();
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${recipients?encodeURIComponent(recipients):""}&su=${sub}&body=${body}`,"_blank");
+    const body = encodeURIComponent(deliveryEmailText(r, true));
+    const recipients = emailRecipientsForMailto();
+    window.location.href = `mailto:${recipients}?subject=${sub}&body=${body}`;
   }
 
   function copyWhatsApp() {

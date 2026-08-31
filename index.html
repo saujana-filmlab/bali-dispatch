@@ -1711,8 +1711,13 @@ function addRoll() {
   }
 
   const emailNotesText = r => r?.notes ? `\n\nNotes:\n${r.notes}` : "";
+  const escapeEmailHtml = value => String(value || "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
   const emailNotesHtml = r => r?.notes
-    ? `<br><p><strong>Notes:</strong><br>${String(r.notes).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>")}</p>`
+    ? `<br><p><strong>Notes:</strong><br>${escapeEmailHtml(r.notes).replace(/\n/g,"<br>")}</p>`
     : "";
 
   async function copyRich() {
@@ -1735,15 +1740,29 @@ function addRoll() {
     .join(",");
   const deliveryEmailText = (r, includeSignature) =>
     `Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}${emailNotesText(r)}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377${includeSignature ? "\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia" : ""}`;
+  const deliveryEmailHtml = r => {
+    const scansUrl = escapeEmailHtml(r.shortUrl || r.url);
+    return `<p>Hi <strong>${escapeEmailHtml(r.custName)}</strong>! Your scans are ready 🎞️</p><p><strong>Order Number: ${escapeEmailHtml(r.orderNumber)}</strong></p>${emailNotesHtml(r)}<p>Please click the link below to access your scans:</p><p><a href="${scansUrl}"><strong>Get your scans here →</strong></a></p><p>Link active for <strong>7 days</strong>. Quote order number when collecting negatives.</p><p>Questions? <a href="https://wa.me/6282251318377"><strong>WhatsApp: +62 822 5131 8377</strong></a></p>`;
+  };
+  async function copyGmailEmailBody(r) {
+    const plain = deliveryEmailText(r, false);
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([deliveryEmailHtml(r)], {type:"text/html"}),
+        "text/plain": new Blob([plain], {type:"text/plain"})
+      })]);
+      return;
+    }
+    await navigator.clipboard.writeText(plain);
+  }
 
   function sendWithGmailSignature() {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = deliveryEmailText(r, false);
     const recipients = emailRecipients();
-    navigator.clipboard.writeText(body).then(
-      () => showToast("Email text copied. Paste it above the signature ✓"),
+    copyGmailEmailBody(r).then(
+      () => showToast("Email copied with active link. Paste it above the signature ✓"),
       () => showToast("Gmail opened. Paste the delivery details manually.")
     );
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${recipients?encodeURIComponent(recipients):""}&su=${sub}`,"_blank");

@@ -1728,15 +1728,16 @@ function addRoll() {
     if (!result) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready - Saujana Film Lab Bali`);
-    const body = encodeURIComponent(`Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia`);
-    const bodyWithNotes = r.notes
-      ? encodeURIComponent(decodeURIComponent(body).replace(`Order: ${r.orderNumber}\n\nPlease`, `Order: ${r.orderNumber}${emailNotesText(r)}\n\nPlease`))
-      : body;
+    const body = `Hi ${r.custName}! Your scans are ready 🎞️\n\nOrder: ${r.orderNumber}${emailNotesText(r)}\n\nPlease click the link below to access your scans:\n\n${r.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nQuestions? WhatsApp us at +62 822 5131 8377`;
     const recipients = [custEmail, ...extraEmails]
       .map(email => String(email || "").trim())
       .filter(Boolean)
       .join(",");
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${recipients?encodeURIComponent(recipients):""}&su=${sub}&body=${bodyWithNotes}`,"_blank");
+    navigator.clipboard.writeText(body).then(
+      () => showToast("Email text copied. Paste it above the signature ✓"),
+      () => showToast("Gmail opened. Paste the delivery details manually.")
+    );
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${recipients?encodeURIComponent(recipients):""}&su=${sub}`,"_blank");
   }
 
   function copyWhatsApp() {
@@ -2367,13 +2368,17 @@ Saujana Film Lab Bali`;
                 Please click the link below to access your scans:<br/><br/>
                 <span className="readable-link" style={{color:"var(--blue-l)",textDecoration:"underline"}}>Get your scans here →</span><br/><br/>
                 Link active for <strong style={{color:"var(--white)"}}>7 days</strong>. Quote order number when collecting negatives.<br/><br/>
-                Questions? WhatsApp us at <strong style={{color:"var(--white)"}}>+62 822 5131 8377</strong><br/><br/>
-                Kind regards,<br/>
-                <strong style={{color:"var(--white)"}}>Saujana Film Lab</strong><br/>Bali, Indonesia
+                Questions? WhatsApp us at <strong style={{color:"var(--white)"}}>+62 822 5131 8377</strong>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                <button onClick={copyRich} style={{...css.btn(),padding:11}}>Copy Email</button>
-                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Open Email ↗</button>
+                <button
+                  onClick={openGmail}
+                  style={{...css.btn(),padding:11,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}
+                >
+                  <span>Send with</span>
+                  <img src="gmail-icon.svg" alt="Gmail" style={{width:18,height:18,display:"block"}}/>
+                </button>
+                <button onClick={openGmail} style={{...css.btn("ghost"),padding:11}}>Send Email ↗</button>
               </div>
             </div>
           </>

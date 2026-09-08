@@ -729,6 +729,9 @@ const fmtDT   = ts => {
 };
 const cleanOrderNumber = value => String(value || "").trim().toUpperCase();
 const ORDER_NUMBER_CACHE_KEY = "saujana-order-number-cache-v1";
+const DUPLICATE_ORDER_TITLE = "You sure about that number? 👀";
+const DUPLICATE_ORDER_MESSAGE = "This order number already belongs to someone else. Please double-check it before continuing.";
+const DUPLICATE_ORDER_SUFFIX_HELP = "If this is the B&W or ECN-2 part of the same order, add -BW or -ECN to the end of that order number.";
 
 function readOrderNumberCache() {
   try {
@@ -1438,6 +1441,13 @@ function selectCust(c) {
   setCustPhone(c.phone || "");
   setShowDrop(false);
 }
+
+function findExistingOrderNumber(value) {
+  const normalized = cleanOrderNumber(value);
+  if (!normalized) return null;
+  return orders.find(order => cleanOrderNumber(order.orderNumber) === normalized) || null;
+}
+
 async function addCustomer() {
   const email = custEmail.trim().toLowerCase();
 
@@ -1552,6 +1562,10 @@ function addRoll() {
       showToast("Enter an order number first");
       return;
     }
+    if (findExistingOrderNumber(orderNo)) {
+      showToast(DUPLICATE_ORDER_TITLE);
+      return;
+    }
     setCreatingFolder(true);
     const registryName = selCust ? selCust.name : (custInput.trim() || "");
     const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
@@ -1573,6 +1587,10 @@ function addRoll() {
     const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
     const film = namedRolls.join(" · ");
     const deliveryFilm = deliveryRollDetails.trim() || compactRollDetails(namedRolls);
+    if (findExistingOrderNumber(orderNo)) {
+      showToast(DUPLICATE_ORDER_TITLE);
+      return;
+    }
     if (!canGen) return;
     const sheetsForDelivery = skipContactSheets ? [] : contactSheets
       .filter(sheet=>!excludedRolls.includes(sheet.rollIndex))
@@ -1815,6 +1833,8 @@ Saujana Film Lab Bali`;
   const contactSheetCustomerName = (showDeliveryName ? deliveryName.trim() : "") || (selCust ? selCust.name : custInput.trim());
   const namedRolls = rolls.map(roll=>String(roll||"").trim()).filter(Boolean);
   const deliveryRollSuggestion = compactRollDetails(namedRolls);
+  const duplicateOrder = findExistingOrderNumber(orderNo);
+  const hasDuplicateOrder = Boolean(duplicateOrder);
   const requiredDetailsReady = Boolean(orderNo.trim() && contactSheetCustomerName && namedRolls.length && driveLink.trim());
   const everyRollResolved = Boolean(namedRolls.length) && namedRolls.every((roll,index) =>
     excludedRolls.includes(index) || contactSheets.some(sheet => sheet.rollIndex===index && sheet.filmName===roll)
@@ -1823,9 +1843,11 @@ Saujana Film Lab Bali`;
     !excludedRolls.includes(index) && !contactSheets.some(sheet=>sheet.rollIndex===index && sheet.filmName===roll)
   ).length;
   const isFilePreview = window.location.protocol === "file:";
-  const canGen = !isFilePreview && requiredDetailsReady && (skipContactSheets || everyRollResolved);
+  const canGen = !isFilePreview && !hasDuplicateOrder && requiredDetailsReady && (skipContactSheets || everyRollResolved);
   const publishHint = isFilePreview
     ? "Local file mode cannot upload. Open http://127.0.0.1:4174 to test publishing."
+    : hasDuplicateOrder
+    ? `${DUPLICATE_ORDER_MESSAGE} ${DUPLICATE_ORDER_SUFFIX_HELP}`
     : !requiredDetailsReady
     ? "Complete the order number, customer, film roll, and Drive link first."
     : (!skipContactSheets && !everyRollResolved)
@@ -1938,6 +1960,28 @@ Saujana Film Lab Bali`;
               onChange={e=>setOrderNo(e.target.value)}
               placeholder="e.g. 0007777"
             />
+            {hasDuplicateOrder && (
+              <div style={{
+                marginTop:10,
+                padding:"12px 13px",
+                background:"rgba(255,100,37,0.08)",
+                border:"1px solid #ff6425",
+                color:"var(--light)",
+                fontSize:10,
+                lineHeight:1.6
+              }}>
+                <strong style={{display:"block",color:"#f3c3a2",fontSize:12,marginBottom:4}}>
+                  {DUPLICATE_ORDER_TITLE}
+                </strong>
+                <span>{DUPLICATE_ORDER_MESSAGE}</span><br/>
+                <span>If this is the B&amp;W or ECN-2 part of the same order, add <strong style={{color:"#f3c3a2"}}>-BW</strong> or <strong style={{color:"#f3c3a2"}}>-ECN</strong> to the end of that order number.</span>
+                {duplicateOrder.customerName && (
+                  <div style={{marginTop:8,color:"var(--dim)",fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                    Existing: {duplicateOrder.orderNumber} · {duplicateOrder.customerName}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Customer search */}

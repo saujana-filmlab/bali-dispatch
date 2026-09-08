@@ -12,6 +12,8 @@ const JSON_HEADERS = {
 const CONTACT_SHEETS_MAX_ROLLS = 20;
 const CONTACT_SHEETS_ALLOWED_STYLES = new Set(["classic", "isle-punch", "flat"]);
 const CONTACT_SHEETS_ALLOWED_FORMATS = new Set(["full-frame", "half-frame"]);
+const DUPLICATE_ORDER_TITLE = "You sure about that number? 👀";
+const DUPLICATE_ORDER_MESSAGE = "This order number already belongs to someone else. Please double-check it before continuing.\nIf this is the B&W or ECN-2 part of the same order, add -BW or -ECN to the end of that order number.";
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
@@ -76,6 +78,17 @@ function safeStringEqual(left, right) {
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function orderNumberExistsResponse(existingOrder) {
+  return {
+    success: false,
+    error: `${DUPLICATE_ORDER_TITLE}\n${DUPLICATE_ORDER_MESSAGE}`,
+    code: "ORDER_NUMBER_EXISTS",
+    title: DUPLICATE_ORDER_TITLE,
+    message: DUPLICATE_ORDER_MESSAGE,
+    existingOrder: existingOrder ? orderFromRow(existingOrder) : null
+  };
 }
 
 function requireContactSheetSettings(env) {
@@ -668,6 +681,9 @@ async function addOrder(db, data) {
   const customerName = cleanText(data.customerName);
   if (!orderNumber) return {error: "Missing order number"};
   if (!customerName) return {error: "Missing customer name"};
+
+  const existingOrder = await getOrderRowByNumber(db, orderNumber);
+  if (existingOrder) return orderNumberExistsResponse(existingOrder);
 
   let customer = null;
   const legacyCustomerId = cleanText(data.customerId);

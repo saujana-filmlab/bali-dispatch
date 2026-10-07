@@ -19,6 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js"></script>
+  <script src="delivery-email.js?v=20261007"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
@@ -1753,12 +1754,9 @@ function addRoll() {
     .join(",");
   const deliveryEmailText = (r, includeSignature) =>
     `Hi ${r.custName}!\n\nYour scans are ready 🎞️✨\n\nOrder Number: ${r.orderNumber}${emailNotesText(r)}\n\nTap or click the link below to view and download your scans:\n\nOPEN YOUR SCANS\n${r.shortUrl || r.url}\n\nBefore you get into the photos:\n- Your link will stay active for 7 days, so please download everything before it expires.\n- When collecting your negatives, just quote order number ${r.orderNumber}.\n\nQuestions or need a hand?\nWhatsApp us at +62 822 5131 8377\n\nThanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!${includeSignature ? "\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia" : ""}`;
-  const deliveryEmailHtml = r => {
-    const scansUrl = escapeEmailHtml(r.shortUrl || r.url);
-    return `<p>Hi <strong>${escapeEmailHtml(r.custName)}!</strong></p><p><strong>Your scans are ready 🎞️✨</strong></p><p><strong>Order Number: ${escapeEmailHtml(r.orderNumber)}</strong></p>${emailNotesHtml(r)}<p>Tap or click the button below to view and download your scans:</p><p><a href="${scansUrl}" style="display:inline-block;padding:12px 18px;background:#180b06;color:#f3c3a2;border:1px solid #ff6425;text-decoration:none;font-weight:800;letter-spacing:.08em;border-radius:0;"><strong>OPEN YOUR SCANS</strong></a></p><p><strong>Before you get into the photos:</strong></p><ul><li>Your link will stay active for <strong>7 days</strong>, so please download everything before it expires.</li><li>When collecting your negatives, just quote order number <strong>${escapeEmailHtml(r.orderNumber)}</strong>.</li></ul><p>Questions or need a hand?<br><a href="https://wa.me/6282251318377"><strong>WhatsApp us at +62 822 5131 8377</strong></a></p><p>Thanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!</p>`;
-  };
+  const deliveryEmailHtml = r => buildSaujanaDeliveryEmail(r);
   async function copyGmailEmailBody(r) {
-    const plain = deliveryEmailText(r, false);
+    const plain = buildSaujanaDeliveryEmailText(r);
     if (navigator.clipboard?.write && window.ClipboardItem) {
       await navigator.clipboard.write([new ClipboardItem({
         "text/html": new Blob([deliveryEmailHtml(r)], {type:"text/html"}),
@@ -2431,30 +2429,11 @@ Saujana Film Lab Bali`;
 
             <div style={css.card}>
               <span style={css.secLabel}>Email</span>
-              <div className="readable-panel" style={{fontSize:12,lineHeight:1.9,color:"var(--light)",background:"var(--dark)",
-                           border:"1px solid var(--border)",borderRadius:2,padding:18,marginBottom:12}}>
-                Hi <strong style={{color:"var(--white)"}}>{result.custName}!</strong><br/><br/>
-                <strong style={{color:"var(--white)"}}>Your scans are ready 🎞️✨</strong><br/><br/>
-                <strong style={{color:"var(--white)"}}>Order Number: {result.orderNumber}</strong><br/><br/>
-                {result.notes && (
-                  <>
-                    <strong style={{color:"var(--white)"}}>Notes:</strong><br/>
-                    {result.notes}<br/><br/>
-                  </>
-                )}
-                Tap or click the button below to view and download your scans:<br/><br/>
-                <span className="readable-link" style={{display:"inline-block",padding:"10px 14px",background:"#180b06",color:"#f3c3a2",border:"1px solid #ff6425",textDecoration:"none",fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase"}}>
-                  OPEN YOUR SCANS
-                </span><br/><br/>
-                <strong style={{color:"var(--white)"}}>Before you get into the photos:</strong>
-                <ul style={{margin:"8px 0 16px",paddingLeft:18}}>
-                  <li>Your link will stay active for <strong style={{color:"var(--white)"}}>7 days</strong>, so please download everything before it expires.</li>
-                  <li>When collecting your negatives, just quote order number <strong style={{color:"var(--white)"}}>{result.orderNumber}</strong>.</li>
-                </ul>
-                Questions or need a hand?<br/>
-                <span className="readable-link" style={{color:"var(--blue-l)",textDecoration:"underline",fontWeight:800}}>WhatsApp us at +62 822 5131 8377</span><br/><br/>
-                Thanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!
-              </div>
+              <div
+                className="delivery-email-preview"
+                style={{background:"#100704",border:"1px solid #58301d",marginBottom:12}}
+                dangerouslySetInnerHTML={{__html:deliveryEmailHtml(result)}}
+              />
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <button
                   onClick={sendWithGmailSignature}

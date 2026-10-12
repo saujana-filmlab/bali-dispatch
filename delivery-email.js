@@ -16,6 +16,7 @@
     const url = new URL(order.shortUrl || order.url);
     if (!/^https?:$/.test(url.protocol)) throw new Error("A web delivery link is required.");
     const scansUrl = escapeHtml(url.href);
+    const collectionCopy = SaujanaNegativeCollection.deliveryCopy(order.collectNegatives);
     let selectedTheme = order.deliveryTheme;
     if (!selectedTheme) {
       try { selectedTheme = new URL(order.url || order.shortUrl).searchParams.get("negative"); }
@@ -73,7 +74,7 @@
           <tr><td bgcolor="${palette.inset}" style="padding:16px 18px;background-color:${palette.inset};border-radius:7px;">
             <p style="margin:0 0 12px;font-family:${mono};font-size:10px;line-height:17px;font-weight:bold;color:${palette.accent};">BEFORE YOU GET INTO THE PHOTOS</p>
             <p style="margin:0 0 12px;font-size:14px;line-height:23px;color:${palette.paper};">Your link will stay active for <strong style="color:${palette.accent};">7 days</strong>, so please download everything before it expires.</p>
-            <p style="margin:0;font-size:14px;line-height:23px;color:${palette.paper};">When collecting your negatives, just quote order number <strong>${number}</strong>.</p>
+            ${collectionCopy ? `<p style="margin:0 0 8px;font-family:${mono};font-size:10px;line-height:17px;font-weight:bold;color:${palette.accent};">${escapeHtml(collectionCopy.title)}</p><p style="margin:0;font-size:14px;line-height:23px;color:${palette.paper};">${escapeHtml(collectionCopy.body)}</p>` : ""}
           </td></tr>
         </table>
       </td></tr>${notes}
@@ -100,6 +101,8 @@
   root.buildSaujanaDeliveryEmail = buildDeliveryEmail;
   root.buildSaujanaDeliveryEmailText = function (order) {
     const notes = order.notes ? `\n\nNotes from the lab:\n${order.notes}` : "";
-    return `Hi ${order.custName}!\n\nYour scans are ready 🎞️✨\n\nOrder Number: ${order.orderNumber}${notes}\n\nTap or click the link below to view and download your scans:\n\nOPEN YOUR SCANS\n${order.shortUrl || order.url}\n\nBefore you get into the photos:\n- Your link will stay active for 7 days, so please download everything before it expires.\n- When collecting your negatives, just quote order number ${order.orderNumber}.\n\nThanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!\n\nAuto-generated email. Actual humans on the other end.\nHit reply, DM us on Instagram, or message us on WhatsApp. We're cool like that.\nInstagram: https://www.instagram.com/saujanabali\nWhatsApp: https://wa.me/6282251318377`;
+    const collectionCopy = SaujanaNegativeCollection.deliveryCopy(order.collectNegatives);
+    const collection = collectionCopy ? `\n\n${collectionCopy.title}\n${collectionCopy.body}` : "";
+    return `Hi ${order.custName}!\n\nYour scans are ready 🎞️✨\n\nOrder Number: ${order.orderNumber}${notes}\n\nTap or click the link below to view and download your scans:\n\nOPEN YOUR SCANS\n${order.shortUrl || order.url}\n\nBefore you get into the photos:\n- Your link will stay active for 7 days, so please download everything before it expires.${collection}\n\nThanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!\n\nAuto-generated email. Actual humans on the other end.\nHit reply, DM us on Instagram, or message us on WhatsApp. We're cool like that.\nInstagram: https://www.instagram.com/saujanabali\nWhatsApp: https://wa.me/6282251318377`;
   };
 }(typeof window === "undefined" ? globalThis : window));

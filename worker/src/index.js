@@ -33,6 +33,13 @@ function parseBoolean(value, fallback = true) {
   return !["false", "f", "no", "n", "0"].includes(String(value).trim().toLowerCase());
 }
 
+function normalizeCollectNegatives(value) {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  const choice = cleanText(value).toLowerCase();
+  return choice === "yes" || choice === "no" ? choice : null;
+}
+
 function safeInt(value, fallback = 0) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
@@ -230,6 +237,7 @@ function orderFromRow(row) {
     deliveryName: row.delivery_display_name || "",
     film: row.film || "",
     notes: row.notes || "",
+    collectNegatives: normalizeCollectNegatives(row.collect_negatives),
     driveLink: row.drive_link || "",
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
   };
@@ -341,7 +349,7 @@ async function deleteCustomer(db, data) {
 async function getOrders(db) {
   const rows = await db.select(
     "orders",
-    "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,drive_link,created_at&order=created_at.desc"
+    "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at&order=created_at.desc"
   );
   return rows.map(orderFromRow);
 }
@@ -360,7 +368,7 @@ async function getOrderByNumber(db, data) {
 
   const rows = await db.select(
     "orders",
-    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,drive_link,created_at,contact_sheets(id,roll_index,film_name,frame_count,landscape_url,portrait_url,status)&order_number=eq.${encodeURIComponent(orderNumber)}&limit=1`
+    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at,contact_sheets(id,roll_index,film_name,frame_count,landscape_url,portrait_url,status)&order_number=eq.${encodeURIComponent(orderNumber)}&limit=1`
   );
   const row = rows[0];
   if (!row) return null;
@@ -382,7 +390,7 @@ async function getOrderByNumber(db, data) {
 async function getOrderRowByNumber(db, orderNumber) {
   const rows = await db.select(
     "orders",
-    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,drive_link,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
+    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
   );
   return rows[0] || null;
 }
@@ -681,6 +689,10 @@ async function addOrder(db, data) {
   const customerName = cleanText(data.customerName);
   if (!orderNumber) return {error: "Missing order number"};
   if (!customerName) return {error: "Missing customer name"};
+  const collectNegatives = normalizeCollectNegatives(data.collectNegatives);
+  if (data.collectNegatives !== undefined && data.collectNegatives !== null && data.collectNegatives !== "" && !collectNegatives) {
+    return {error:"Negatives collection must be Yes or No.",code:"INVALID_COLLECTION_CHOICE"};
+  }
 
   const existingOrder = await getOrderRowByNumber(db, orderNumber);
   if (existingOrder) return orderNumberExistsResponse(existingOrder);
@@ -709,6 +721,7 @@ async function addOrder(db, data) {
     delivery_display_name: cleanText(data.deliveryName || data.deliveryDisplayName) || null,
     film: cleanText(data.film || data.deliveryFilm) || null,
     notes: cleanText(data.notes) || null,
+    collect_negatives: collectNegatives,
     drive_link: cleanText(data.driveLink) || null,
     delivery_url: cleanText(data.deliveryUrl) || null,
     contact_sheets_enabled: Boolean(data.contactSheets?.length || data.contactSheetsEnabled)
@@ -727,6 +740,28 @@ async function addOrder(db, data) {
   if (recipientRows.length) await db.insert("order_recipients", recipientRows, {returning: "minimal"});
 
   return orderFromRow(order);
+}
+
+async function updateCollectNegatives(db, env, data) {
+  try { await requireContactSheetAdmin(env, data); }
+  catch { return {error:"Staff authorization is required to save the collection choice.",code:"UNAUTHORIZED"}; }
+  const id = cleanText(data.id);
+  const choice = normalizeCollectNegatives(data.collectNegatives);
+  const expected = normalizeCollectNegatives(data.expectedCollectNegatives);
+  if (!id || !choice || !expected) return {error:"A saved order and a Yes or No answer are required.",code:"INVALID_COLLECTION_CHOICE"};
+  const filters = [eqFilter("legacy_order_id", id)];
+  if (isUuid(id)) filters.push(eqFilter("id", id));
+  const rows = await db.select("orders", `?select=*&or=(${filters.join(",")})&limit=1`);
+  const order = rows[0];
+  if (!order) return {error:"Order not found",code:"ORDER_NOT_FOUND"};
+  if (!normalizeCollectNegatives(order.collect_negatives)) {
+    return {error:"This historical order has no recorded collection answer and must stay N/A.",code:"HISTORICAL_COLLECTION_NA"};
+  }
+  if (order.collect_negatives === choice) return {success:true,order:orderFromRow(order)};
+  if (order.collect_negatives !== expected) return {error:"The saved collection answer changed. Refresh the order before saving.",code:"COLLECTION_CONFLICT"};
+  const updated = await db.update("orders", `?id=eq.${encodeURIComponent(order.id)}&collect_negatives=eq.${expected}`, {collect_negatives:choice});
+  if (!updated.length) return {error:"The saved collection answer changed. Refresh the order before saving.",code:"COLLECTION_CONFLICT"};
+  return {success:true,order:orderFromRow(updated[0])};
 }
 
 async function getStock(db) {
@@ -856,7 +891,7 @@ async function exportData(db, env, data) {
     stockHistory
   ] = await Promise.all([
     db.select("customers", "?select=id,legacy_customer_id,name,email,phone,source,created_at&order=created_at.desc&limit=10000"),
-    db.select("orders", "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,drive_link,delivery_url,contact_sheets_enabled,created_at&order=created_at.desc&limit=10000"),
+    db.select("orders", "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,contact_sheets_enabled,created_at&order=created_at.desc&limit=10000"),
     db.select("order_recipients", "?select=order_id,email,is_primary&order=is_primary.desc,email.asc&limit=10000"),
     db.select("stock_items", "?select=category,name,qty,visible,last_updated&order=category.asc,name.asc&limit=10000"),
     db.select("stock_count_sessions", "?select=legacy_history_id,created_at,action,report,before_stock,after_stock&order=created_at.desc&limit=10000")
@@ -894,7 +929,7 @@ async function exportData(db, env, data) {
       mimeType: "text/csv;charset=utf-8",
       rowCount: orders.length,
       content: csvFile(
-        ["ID", "Order Number", "Customer ID", "Customer Name", "Email", "Phone", "Additional Emails", "Film", "Notes", "Drive Link", "Delivery URL", "Contact Sheets", "Date", "Supabase ID"],
+        ["ID", "Order Number", "Customer ID", "Customer Name", "Email", "Phone", "Additional Emails", "Film", "Notes", "Negatives Collection", "Drive Link", "Delivery URL", "Contact Sheets", "Date", "Supabase ID"],
         orders.map(row => {
           const orderRecipients = recipientsByOrder.get(row.id) || [];
           const primary = orderRecipients.find(recipient => recipient.is_primary);
@@ -912,6 +947,7 @@ async function exportData(db, env, data) {
             "Additional Emails": extras.join(", "),
             "Film": row.film,
             "Notes": row.notes,
+            "Negatives Collection": normalizeCollectNegatives(row.collect_negatives) === "yes" ? "Yes" : normalizeCollectNegatives(row.collect_negatives) === "no" ? "No" : "N/A",
             "Drive Link": row.drive_link,
             "Delivery URL": row.delivery_url,
             "Contact Sheets": row.contact_sheets_enabled ? "TRUE" : "FALSE",
@@ -981,6 +1017,8 @@ async function routeAction(action, data, db, env) {
       return getOrderByNumber(db, data);
     case "addOrder":
       return addOrder(db, data);
+    case "updateCollectNegatives":
+      return updateCollectNegatives(db, env, data);
     case "verifyContactSheetAdmin":
       return verifyContactSheetAdmin(env, data);
     case "prepareContactSheetPublish":

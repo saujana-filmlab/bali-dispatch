@@ -19,7 +19,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js"></script>
-  <script src="delivery-email.js?v=20261008-themes"></script>
+  <script src="negative-collection.js?v=20261012"></script>
+  <script src="delivery-email.js?v=20261012-negatives"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
@@ -325,6 +326,7 @@ const WORKER_ACTIONS = new Set([
   "getOrder",
   "getOrderByNumber",
   "addOrder",
+  "updateCollectNegatives",
   "verifyContactSheetAdmin",
   "prepareContactSheetPublish",
   "beginContactSheetUpload",
@@ -769,7 +771,8 @@ const deliveryUrl = o => {
   const deliveryTheme = normalizeDeliveryTheme(o.deliveryTheme);
   const deliveryDate = String(o.deliveryDate || baliDeliveryDate());
   // Notes excluded from URL — fetched from Sheets by delivery page
-  return `${BASE_URL}/?theme=bali&negative=${encodeURIComponent(deliveryTheme)}&date=${encodeURIComponent(deliveryDate)}&order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}`;
+  const collectionChoice = SaujanaNegativeCollection.normalize(o.collectNegatives);
+  return `${BASE_URL}/?theme=bali&negative=${encodeURIComponent(deliveryTheme)}&date=${encodeURIComponent(deliveryDate)}&order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}${collectionChoice ? `&collectNegatives=${collectionChoice}` : ""}`;
 };
 
 const DELIVERY_THEME_OPTIONS = [
@@ -881,7 +884,7 @@ async function createLocalDeliveryPreview({customerName,orderNumber,driveLink,fi
     .nav{width:42px;height:42px;border-radius:50%;border-color:#505050;background:rgba(12,12,12,.88);font-family:'Cormorant Garamond',serif;line-height:1;transition:background .2s ease,border-color .2s ease,color .2s ease,transform .2s ease,box-shadow .2s ease}.nav:hover{background:#d19a2a;border-color:#d19a2a;color:#0a0a0a;transform:translateY(-50%) scale(1.06);box-shadow:0 6px 20px rgba(0,0,0,.35)}.nav:active{transform:translateY(-50%) scale(.96)}.nav:focus-visible,.dot:focus-visible{outline:2px solid #d19a2a;outline-offset:3px}.dot{cursor:pointer;transition:transform .2s ease,background .2s ease}.dot:hover{background:#d19a2a;transform:scale(1.35)}
     .logo-wrap img{height:auto;max-height:none;object-fit:contain}
     @media(min-width:761px){.page{max-width:1040px}.header{max-width:760px;margin-inline:auto}.ready-card{padding:58px 52px}.notice{margin:24px 0 0}.info-section,.actions,.footer{max-width:none;margin-left:0;margin-right:0}}
-  </style></head><body><div class="sprocket-strip">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div><main class="page"><header class="header"><div class="logo-wrap">${logoMarkup}</div><p class="tagline">Develop · Scan · Film Supply · Cameras</p></header><section class="ready-card"><p class="ready-eyebrow">Order complete · ${escapePreviewHtml(orderNumber)}</p><h1 class="ready-headline">Your scans are ready,</h1><p class="ready-name">${escapePreviewHtml(customerName)}</p><p class="ready-sub">${escapePreviewHtml(film)}</p>${carousel}<div class="download-wrap"><a href="${escapePreviewHtml(driveLink)}" class="btn-download" target="_blank" rel="noopener"><span class="button-icon icon-download primary-download-icon" aria-hidden="true"><i></i></span><span>Download full-resolution scans</span></a></div></section><div class="notice"><span class="notice-icon">⏳</span><p><strong>Your download link is active for 7 days.</strong> Please save your scans before then. Need us to hold onto your negatives? We store them for up to <strong>1 month upon request</strong> — just let us know.</p></div><section class="info-section"><p class="info-label">A note from us</p><div class="message-block">${personalNote}Film has this funny way of making ordinary moments feel eternal. We take that seriously around here, even if we don't always look like it. <strong>Hope your scans are everything you were waiting for.</strong><br><br>Any questions about your order? We're always here.</div></section><section class="actions"><p class="info-label">Stay in touch</p><div class="action-grid"><a href="https://g.page/r/CarOb39L8uCJEBM/review" target="_blank" rel="noopener" class="action-card"><div class="action-icon">⭐</div><div><p class="action-title">Leave a Review</p><p class="action-sub">Happy with your scans?</p></div></a><a href="https://www.instagram.com/saujanabali" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📷</div><div><p class="action-title">Tag Us</p><p class="action-sub">@saujanabali</p></div></a><a href="http://wa.me/6282251318377" target="_blank" rel="noopener" class="action-card"><div class="action-icon">💬</div><div><p class="action-title">WhatsApp Us</p><p class="action-sub">Questions about your order</p></div></a><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📍</div><div><p class="action-title">Find Us</p><p class="action-sub">Jl. Batu Bolong, Canggu</p></div></a></div></section><footer class="footer"><p class="footer-text">Saujana Film Lab · Bali, Indonesia<br>Develop · Scan · Film Supply · Cameras<br><br><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:none;letter-spacing:.15em;font-size:9px">Jl. Pantai Batu Bolong No.25, Canggu, Bali 80361</a></p></footer><div class="sprocket-strip sprocket-strip-bottom">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div></main><script>
+  </style></head><body><div class="sprocket-strip">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div><main class="page"><header class="header"><div class="logo-wrap">${logoMarkup}</div><p class="tagline">Develop · Scan · Film Supply · Cameras</p></header><section class="ready-card"><p class="ready-eyebrow">Order complete · ${escapePreviewHtml(orderNumber)}</p><h1 class="ready-headline">Your scans are ready,</h1><p class="ready-name">${escapePreviewHtml(customerName)}</p><p class="ready-sub">${escapePreviewHtml(film)}</p>${carousel}<div class="download-wrap"><a href="${escapePreviewHtml(driveLink)}" class="btn-download" target="_blank" rel="noopener"><span class="button-icon icon-download primary-download-icon" aria-hidden="true"><i></i></span><span>Download full-resolution scans</span></a></div></section><div class="notice"><span class="notice-icon">⏳</span><p><strong>Your download link is active for 7 days.</strong> Please save your scans before then.</p></div><section class="info-section"><p class="info-label">A note from us</p><div class="message-block">${personalNote}Film has this funny way of making ordinary moments feel eternal. We take that seriously around here, even if we don't always look like it. <strong>Hope your scans are everything you were waiting for.</strong><br><br>Any questions about your order? We're always here.</div></section><section class="actions"><p class="info-label">Stay in touch</p><div class="action-grid"><a href="https://g.page/r/CarOb39L8uCJEBM/review" target="_blank" rel="noopener" class="action-card"><div class="action-icon">⭐</div><div><p class="action-title">Leave a Review</p><p class="action-sub">Happy with your scans?</p></div></a><a href="https://www.instagram.com/saujanabali" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📷</div><div><p class="action-title">Tag Us</p><p class="action-sub">@saujanabali</p></div></a><a href="http://wa.me/6282251318377" target="_blank" rel="noopener" class="action-card"><div class="action-icon">💬</div><div><p class="action-title">WhatsApp Us</p><p class="action-sub">Questions about your order</p></div></a><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" class="action-card"><div class="action-icon">📍</div><div><p class="action-title">Find Us</p><p class="action-sub">Jl. Batu Bolong, Canggu</p></div></a></div></section><footer class="footer"><p class="footer-text">Saujana Film Lab · Bali, Indonesia<br>Develop · Scan · Film Supply · Cameras<br><br><a href="https://maps.app.goo.gl/thYiP36heXocSxuY6" target="_blank" rel="noopener" style="color:var(--dim);text-decoration:none;letter-spacing:.15em;font-size:9px">Jl. Pantai Batu Bolong No.25, Canggu, Bali 80361</a></p></footer><div class="sprocket-strip sprocket-strip-bottom">${sprocketHoles}<span class="frame-counter">SAUJANA · BALI</span></div></main><script>
     (()=>{const slides=[...document.querySelectorAll('.slide')],dots=[...document.querySelectorAll('.dot')];let current=0;const show=i=>{if(!slides.length)return;current=(i+slides.length)%slides.length;slides.forEach((el,n)=>el.classList.toggle('active',n===current));dots.forEach((el,n)=>el.classList.toggle('active',n===current));};document.querySelector('.prev')?.addEventListener('click',()=>show(current-1));document.querySelector('.next')?.addEventListener('click',()=>show(current+1));dots.forEach(dot=>dot.addEventListener('click',()=>show(Number(dot.dataset.index))));document.querySelectorAll('.share-sheet').forEach(button=>button.addEventListener('click',async()=>{let shared=false;try{const response=await fetch(button.dataset.story);const blob=await response.blob();const file=new File([blob],button.dataset.name,{type:'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});shared=true;}catch(error){if(error&&error.name==='AbortError')return;}}}catch(error){}if(!shared){const link=document.createElement('a');link.href=button.dataset.story;link.download=button.dataset.name;link.click();window.alert('The contact sheet has been downloaded. You can share it from your Photos or Files app.');}}));})();
   <\/script></body></html>`;
   const iconCss = `<style>
@@ -1311,7 +1314,7 @@ function LockScreen({onUnlock}) {
   </div>
 );
 }
-function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, resetSignal}) {
+function Dispatch({customers, orders=[], onOrderSaved, onOrderCollectionSaved, prefill, clearPrefill, resetSignal}) {
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
   const [selCust, setSelCust]     = useState(null);
@@ -1323,6 +1326,8 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [rolls, setRolls]         = useState([""]);
   const [deliveryRollDetails, setDeliveryRollDetails] = useState("");
   const [deliveryTheme, setDeliveryTheme] = useState("colour");
+  const [collectNegatives, setCollectNegatives] = useState(null);
+  const [savingCollection, setSavingCollection] = useState(false);
   const [driveLink, setDriveLink] = useState("");
   const [notes, setNotes]         = useState("");
   const [result, setResult]       = useState(null);
@@ -1339,8 +1344,10 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
   const [loadedPastOrder, setLoadedPastOrder] = useState(false);
   const [previewRoll, setPreviewRoll] = useState(0);
   const dropRef = useRef();
+  const collectionSaveRef = useRef(0);
 
   function resetOrderForm() {
+    collectionSaveRef.current += 1;
     setOrderNo("");
     setCustInput("");
     setSelCust(null);
@@ -1352,6 +1359,8 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
     setRolls([""]);
     setDeliveryRollDetails("");
     setDeliveryTheme("colour");
+    setCollectNegatives(null);
+    setSavingCollection(false);
     setDriveLink("");
     setNotes("");
     if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
@@ -1379,7 +1388,11 @@ function Dispatch({customers, orders=[], onOrderSaved, prefill, clearPrefill, re
 
   useEffect(() => {
     if (prefill) {
+      collectionSaveRef.current += 1;
+      setSavingCollection(false);
       setLoadedPastOrder(false);
+      setCollectNegatives(null);
+      setResult(null);
       setSelCust(prefill);
       setCustInput(prefill.name || "");
       setDeliveryName(prefill.name || "");
@@ -1608,6 +1621,7 @@ function addRoll() {
       film,
       deliveryFilm,
       deliveryTheme: normalizeDeliveryTheme(deliveryTheme),
+      collectNegatives:SaujanaNegativeCollection.normalize(collectNegatives),
       deliveryDate: baliDeliveryDate(),
       notes: notes.trim(),
       driveLink: driveLink.trim()
@@ -1640,6 +1654,9 @@ function addRoll() {
         if (!saved || saved.error) throw new Error(saved?.error || "Could not save the order");
       }
       rememberOrderNumber(saved.id, deliveryOrder.orderNumber);
+      if (SaujanaNegativeCollection.normalize(saved.collectNegatives) !== deliveryOrder.collectNegatives) {
+        throw new Error("The backend has not saved the collection answer. Update the Dispatch Worker before publishing.");
+      }
 
       const uploadedSheets = [];
       let completed = null;
@@ -1685,6 +1702,8 @@ function addRoll() {
         uploadNonce = "";
       }
 
+      deliveryOrder.collectNegatives = SaujanaNegativeCollection.normalize((completed?.order || saved).collectNegatives);
+      setCollectNegatives(deliveryOrder.collectNegatives);
       const longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
       const shortUrl = longUrl;
       onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
@@ -1693,6 +1712,7 @@ function addRoll() {
       if (result?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(result.previewUrl);
       setPreviewRoll(0);
       setResult({
+        id:saved.id,
         url:longUrl,
         shortUrl,
         previewUrl,
@@ -1703,6 +1723,7 @@ function addRoll() {
         contactSheets:sheetsForDelivery,
         driveLink:deliveryOrder.driveLink,
         deliveryTheme:deliveryOrder.deliveryTheme,
+        collectNegatives:deliveryOrder.collectNegatives,
         deliveryDate:deliveryOrder.deliveryDate
       });
       setCopied({});
@@ -1721,7 +1742,52 @@ function addRoll() {
     }
   }
 
+  const collectionDirty = result && SaujanaNegativeCollection.normalize(collectNegatives) !== SaujanaNegativeCollection.normalize(result.collectNegatives);
+  function collectionShareReady() {
+    if (collectionDirty || savingCollection) {
+      showToast("Save the collection choice before sharing.");
+      return false;
+    }
+    return true;
+  }
+
+  async function saveCollectionChoice() {
+    if (!result?.id || !collectionDirty || !SaujanaNegativeCollection.normalize(result.collectNegatives)) return;
+    if (cleanOrderNumber(orderNo) !== cleanOrderNumber(result.orderNumber)) {
+      showToast("Load the saved order before correcting its collection choice.");
+      return;
+    }
+    const savedOrder = result;
+    const sequence = ++collectionSaveRef.current;
+    setSavingCollection(true);
+    try {
+      const updated = await apiCall("updateCollectNegatives", {
+        id:savedOrder.id,
+        collectNegatives,
+        expectedCollectNegatives:savedOrder.collectNegatives,
+        adminKey:getContactSheetAdminKey()
+      });
+      if (sequence !== collectionSaveRef.current) return;
+      if (!updated?.success || !updated?.order) throw new Error(updated?.error || "Could not save the collection choice.");
+      const choice = SaujanaNegativeCollection.normalize(updated.order.collectNegatives);
+      if (!choice) throw new Error("The saved collection choice was not returned.");
+      setResult(previous => {
+        if (previous?.id !== savedOrder.id) return previous;
+        const url = new URL(previous.url);
+        url.searchParams.set("collectNegatives",choice);
+        const nextUrl = url.href;
+        return {...previous,collectNegatives:choice,url:nextUrl,shortUrl:nextUrl,previewUrl:nextUrl};
+      });
+      setCollectNegatives(choice);
+      setCopied({});
+      if (onOrderCollectionSaved) onOrderCollectionSaved(updated.order);
+      showToast("Collection choice saved.");
+    } catch(error) { if (sequence === collectionSaveRef.current) showToast(error.message || "Could not save the collection choice."); }
+    finally { if (sequence === collectionSaveRef.current) setSavingCollection(false); }
+  }
+
   function copyText(text, key) {
+    if (result && !collectionShareReady()) return;
     navigator.clipboard.writeText(text).then(()=>{
       setCopied(c=>({...c,[key]:true}));
       showToast("Copied!");
@@ -1741,9 +1807,10 @@ function addRoll() {
 
   async function copyRich() {
     if (!result) return;
+    if (!collectionShareReady()) return;
     const r = result;
     const scansUrl = escapeEmailHtml(r.shortUrl || r.url);
-    const htmlWithNotes = `<p>Hi <strong>${escapeEmailHtml(r.custName)}!</strong></p><p><strong>Your scans are ready 🎞️✨</strong></p><p><strong>Order Number: ${escapeEmailHtml(r.orderNumber)}</strong></p>${emailNotesHtml(r)}<p>Tap or click the button below to view and download your scans:</p><p><a href="${scansUrl}" style="display:inline-block;padding:12px 18px;background:#180b06;color:#f3c3a2;border:1px solid #ff6425;text-decoration:none;font-weight:800;letter-spacing:.08em;border-radius:0;"><strong>OPEN YOUR SCANS</strong></a></p><p><strong>Before you get into the photos:</strong></p><ul><li>Your link will stay active for <strong>7 days</strong>, so please download everything before it expires.</li><li>When collecting your negatives, just quote order number <strong>${escapeEmailHtml(r.orderNumber)}</strong>.</li></ul><p>Questions or need a hand?<br><a href="https://wa.me/6282251318377"><strong>WhatsApp us at +62 822 5131 8377</strong></a></p><p>Thanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!</p>`;
+    const htmlWithNotes = `<p>Hi <strong>${escapeEmailHtml(r.custName)}!</strong></p><p><strong>Your scans are ready 🎞️✨</strong></p><p><strong>Order Number: ${escapeEmailHtml(r.orderNumber)}</strong></p>${emailNotesHtml(r)}<p>Tap or click the button below to view and download your scans:</p><p><a href="${scansUrl}" style="display:inline-block;padding:12px 18px;background:#180b06;color:#f3c3a2;border:1px solid #ff6425;text-decoration:none;font-weight:800;letter-spacing:.08em;border-radius:0;"><strong>OPEN YOUR SCANS</strong></a></p><p><strong>Before you get into the photos:</strong></p><ul><li>Your link will stay active for <strong>7 days</strong>, so please download everything before it expires.</li>${SaujanaNegativeCollection.message(r.collectNegatives,r.orderNumber) ? `<li>${escapeEmailHtml(SaujanaNegativeCollection.message(r.collectNegatives,r.orderNumber))}</li>` : ""}</ul><p>Questions or need a hand?<br><a href="https://wa.me/6282251318377"><strong>WhatsApp us at +62 822 5131 8377</strong></a></p><p>Thanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!</p>`;
     await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([htmlWithNotes],{type:"text/html"})})]);
     showToast("Email copied ✓");
   }
@@ -1752,8 +1819,12 @@ function addRoll() {
     .map(email => String(email || "").trim())
     .filter(Boolean)
     .join(",");
+  const collectionMessageText = r => {
+    const copy = SaujanaNegativeCollection.deliveryCopy(r.collectNegatives);
+    return copy ? `\n\n${copy.title}\n${copy.body}` : "";
+  };
   const deliveryEmailText = (r, includeSignature) =>
-    `Hi ${r.custName}!\n\nYour scans are ready 🎞️✨\n\nOrder Number: ${r.orderNumber}${emailNotesText(r)}\n\nTap or click the link below to view and download your scans:\n\nOPEN YOUR SCANS\n${r.shortUrl || r.url}\n\nBefore you get into the photos:\n- Your link will stay active for 7 days, so please download everything before it expires.\n- When collecting your negatives, just quote order number ${r.orderNumber}.\n\nQuestions or need a hand?\nWhatsApp us at +62 822 5131 8377\n\nThanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!${includeSignature ? "\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia" : ""}`;
+    `Hi ${r.custName}!\n\nYour scans are ready 🎞️✨\n\nOrder Number: ${r.orderNumber}${emailNotesText(r)}\n\nTap or click the link below to view and download your scans:\n\nOPEN YOUR SCANS\n${r.shortUrl || r.url}\n\nBefore you get into the photos:\n- Your link will stay active for 7 days, so please download everything before it expires.${collectionMessageText(r)}\n\nQuestions or need a hand?\nWhatsApp us at +62 822 5131 8377\n\nThanks for trusting us with your roll. We hope there's a frame in there that makes you go, yep, that's the one. Cheers!${includeSignature ? "\n\nKind regards,\nSaujana Film Lab\nBali, Indonesia" : ""}`;
   const deliveryEmailHtml = r => buildSaujanaDeliveryEmail(r);
   async function copyGmailEmailBody(r) {
     const plain = buildSaujanaDeliveryEmailText(r);
@@ -1769,6 +1840,7 @@ function addRoll() {
 
   function sendWithGmailSignature() {
     if (!result) return;
+    if (!collectionShareReady()) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready 🎞️ | Saujana Film Lab Bali`);
     const recipients = emailRecipients();
@@ -1781,6 +1853,7 @@ function addRoll() {
 
   function openPrefilledEmail() {
     if (!result) return;
+    if (!collectionShareReady()) return;
     const r = result;
     const sub = encodeURIComponent(`[${r.orderNumber}] Your scans are ready 🎞️ | Saujana Film Lab Bali`);
     const body = encodeURIComponent(deliveryEmailText(r, true));
@@ -1790,7 +1863,8 @@ function addRoll() {
 
   function copyWhatsApp() {
     if (!result) return;
-    const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${result.shortUrl}\n\nLink active for 7 days. Quote order number when collecting negatives.\n\nSaujana Film Lab Bali`;
+    if (!collectionShareReady()) return;
+    const text = `Hi ${result.custName}! Your scans are ready 🎞️\n\nOrder Number: ${result.orderNumber}\n\nGet your scans here:\n${result.shortUrl}\n\nLink active for 7 days.${collectionMessageText(result)}\n\nSaujana Film Lab Bali`;
     navigator.clipboard.writeText(text).then(()=>{
       setCopied(c=>({...c, wa:true}));
       showToast("WhatsApp / DM text copied!");
@@ -1798,6 +1872,7 @@ function addRoll() {
     });
   }
 function sendViaWhatsApp() {
+  if (!collectionShareReady()) return;
   if (!custPhone) {
     showToast("well.. there's no phone number broski!");
     return;
@@ -1817,7 +1892,7 @@ Order Number: ${result.orderNumber}
 Get your scans here:
 ${result.shortUrl}
 
-Link active for 7 days. Quote order number when collecting negatives.
+Link active for 7 days.${collectionMessageText(result)}
 
 Saujana Film Lab Bali`;
 
@@ -1841,13 +1916,16 @@ Saujana Film Lab Bali`;
     !excludedRolls.includes(index) && !contactSheets.some(sheet=>sheet.rollIndex===index && sheet.filmName===roll)
   ).length;
   const isFilePreview = window.location.protocol === "file:";
-  const canGen = !isFilePreview && !hasDuplicateOrder && requiredDetailsReady && (skipContactSheets || everyRollResolved);
+  const collectionAnswerReady = SaujanaNegativeCollection.normalize(collectNegatives) !== null;
+  const canGen = !isFilePreview && !hasDuplicateOrder && requiredDetailsReady && collectionAnswerReady && (skipContactSheets || everyRollResolved);
   const publishHint = isFilePreview
     ? "Local file mode cannot upload. Open http://127.0.0.1:4174 to test publishing."
     : hasDuplicateOrder
     ? `${DUPLICATE_ORDER_MESSAGE} ${DUPLICATE_ORDER_SUFFIX_HELP}`
     : !requiredDetailsReady
     ? "Complete the order number, customer, film roll, and Drive link first."
+    : !collectionAnswerReady
+    ? "Record the customer's negatives collection answer from their submission."
     : (!skipContactSheets && !everyRollResolved)
       ? `Prepare or skip ${unresolvedRollCount} remaining roll${unresolvedRollCount===1?"":"s"}.`
       : skipContactSheets
@@ -1878,6 +1956,8 @@ Saujana Film Lab Bali`;
     .slice(0,12);
 
  async function loadPastOrder(o) {
+    collectionSaveRef.current += 1;
+    setSavingCollection(false);
     // 1. Find the customer or default to empty
     const customer = customers.find(c => c.id === o.customerId) || null;
 
@@ -1898,6 +1978,7 @@ Saujana Film Lab Bali`;
     const pastDeliveryFilm = compactRollDetails(rollsArray);
     setDeliveryRollDetails("");
     setDeliveryTheme(normalizeDeliveryTheme(o.deliveryTheme));
+    setCollectNegatives(SaujanaNegativeCollection.normalize(o.collectNegatives));
     contactSheets.forEach(sheet=>{
       if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
       if (sheet.storyPreviewUrl) URL.revokeObjectURL(sheet.storyPreviewUrl);
@@ -1919,7 +2000,8 @@ Saujana Film Lab Bali`;
       deliveryDate:pastDeliveryDate
     });
     setResult({
-        url: longUrl, 
+        id:o.id,
+        url: longUrl,
         shortUrl: longUrl, 
         previewUrl: longUrl,
         custName: o.customerName || "Customer", 
@@ -1928,6 +2010,7 @@ Saujana Film Lab Bali`;
         notes: o.notes || "",
         driveLink:o.driveLink || "",
         deliveryTheme:pastDeliveryTheme,
+        collectNegatives:SaujanaNegativeCollection.normalize(o.collectNegatives),
         deliveryDate:pastDeliveryDate
     });
     setLoadedPastOrder(true);
@@ -2225,6 +2308,22 @@ Saujana Film Lab Bali`;
           </div>
 
           <div style={{marginBottom:24}}>
+            <label style={css.label}>Collect negatives?</label>
+            {!result || SaujanaNegativeCollection.normalize(result.collectNegatives) !== null ? (
+              <div role="group" aria-label="Collect negatives?" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[{value:"yes",label:"Yes"},{value:"no",label:"No"}].map(option=>(
+                  <button key={option.value} type="button" aria-pressed={collectNegatives===option.value}
+                    disabled={generating || savingCollection} onClick={()=>setCollectNegatives(option.value)}
+                    style={{...css.btn(collectNegatives===option.value?"blue":"ghost"),padding:11}}>{option.label}</button>
+                ))}
+              </div>
+            ) : (
+              <div className="negative-collection-status" style={{fontSize:13,color:"var(--white)"}}>
+                {collectNegatives === "yes" ? "Yes" : collectNegatives === "no" ? "No" : "N/A"}
+              </div>
+            )}
+          </div>
+          <div style={{marginBottom:24}}>
             <label style={css.label}>Delivery Theme</label>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:7}}>
               {DELIVERY_THEME_OPTIONS.map(option=>{
@@ -2336,6 +2435,9 @@ Saujana Film Lab Bali`;
             <span><strong style={{display:"block",color:"var(--white)",marginBottom:2}}>Do not include contact sheets</strong>Use this for short rolls or any delivery that should only show the Drive download.</span>
           </label>
 
+          <div className="negative-collection-status" style={{padding:"11px 13px",marginBottom:12,background:"var(--dark)",border:"1px solid var(--border)",fontSize:12,lineHeight:1.6,color:"var(--light)"}}>
+            Negatives collection: <strong style={{color:"var(--white)"}}>{collectNegatives === "yes" ? "Yes" : collectNegatives === "no" ? "No" : "N/A"}</strong>
+          </div>
           <button className="day-accent" onClick={generate} disabled={!canGen||generating}
             style={{...css.btn("blue"),width:"100%",padding:14,opacity:canGen&&!generating?1:0.4}}>
             {generating?"Publishing delivery...":"Publish & Generate Delivery Link"}
@@ -2380,7 +2482,17 @@ Saujana Film Lab Bali`;
         {result ? (
           <>
             <div style={css.card}>
+              <span style={css.secLabel}>Negative Collection</span>
+              <div style={{fontSize:13,color:"var(--white)"}}>Saved: {result.collectNegatives === "yes" ? "Yes" : result.collectNegatives === "no" ? "No" : "N/A"}</div>
+              {collectionDirty && <div role="status" style={{marginTop:9,fontSize:11,color:"var(--blue-l)"}}>Unsaved change. Save before sharing this delivery link.</div>}
+              {collectionDirty && <button type="button" onClick={saveCollectionChoice} disabled={savingCollection}
+                style={{...css.btn("blue"),marginTop:10,padding:10}}>{savingCollection ? "Saving..." : "Save Collection Choice"}</button>}
+            </div>
+            <div style={css.card}>
               <span style={css.secLabel}>Delivery Page Link</span>
+              <div className="negative-collection-status" style={{fontSize:12,lineHeight:1.6,color:"var(--light)",marginBottom:12}}>
+                Negatives collection: <strong style={{color:"var(--white)"}}>{SaujanaNegativeCollection.normalize(result.collectNegatives) === "yes" ? "Yes" : SaujanaNegativeCollection.normalize(result.collectNegatives) === "no" ? "No" : "N/A"}</strong>
+              </div>
               <div className="readable-link" onClick={()=>copyText(result.shortUrl,"url")} style={{background:"var(--dark)",
                 border:"1px solid var(--border)",borderRadius:2,padding:"13px 16px",
                 fontSize:12,color:"var(--blue-l)",wordBreak:"break-all",lineHeight:1.6,
@@ -2388,14 +2500,15 @@ Saujana Film Lab Bali`;
                 {result.shortUrl}
               </div>
               <div style={{display:"grid",gridTemplateColumns: "repeat(3, 1fr)",gap:8,marginBottom:8}}>
-                <button onClick={()=>copyText(result.shortUrl,"url")} style={{...css.btn(),padding:11}}>
+                <button disabled={collectionDirty || savingCollection} onClick={()=>copyText(result.shortUrl,"url")} style={{...css.btn(),padding:11}}>
                   {copied.url?"Copied ✓":"Copy Link"}
                 </button>
-                <button onClick={copyWhatsApp} style={{...css.btn("ghost"),padding:11}}>
+                <button disabled={collectionDirty || savingCollection} onClick={copyWhatsApp} style={{...css.btn("ghost"),padding:11}}>
                   {copied.wa?"Copied ✓":"Copy for WA / DM"}
                 </button>
                 <button
   onClick={sendViaWhatsApp}
+  disabled={collectionDirty || savingCollection}
   style={{
     ...css.btn("ghost"),
     display: "flex",
@@ -2420,7 +2533,7 @@ Saujana Film Lab Bali`;
 </button>
               </div>
               <div style={{textAlign:"center", marginTop:12}}>
-                <a className="readable-link" href={result.previewUrl || result.url} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
+                <a className="readable-link" href={result.previewUrl || result.url} onClick={event=>{if (!collectionShareReady()) event.preventDefault();}} aria-disabled={Boolean(collectionDirty || savingCollection)} target="_blank" rel="noopener" style={{fontSize:9, color:"var(--muted)", textDecoration:"underline", textTransform:"uppercase", letterSpacing:"0.1em"}}>
                   Preview Delivery Page ↗
                 </a>
                 <div style={{fontSize:8,color:"var(--dim)",lineHeight:1.6,marginTop:8}}>This opens the same themed page the customer receives.</div>
@@ -2437,12 +2550,13 @@ Saujana Film Lab Bali`;
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <button
                   onClick={sendWithGmailSignature}
+                  disabled={collectionDirty || savingCollection}
                   style={{...css.btn(),padding:11,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}
                 >
                   <span>Send with</span>
                   <img src="gmail-icon.svg" alt="Gmail" style={{width:18,height:18,display:"block"}}/>
                 </button>
-                <button onClick={openPrefilledEmail} style={{...css.btn("ghost"),padding:11}}>Send Email ↗</button>
+                <button disabled={collectionDirty || savingCollection} onClick={openPrefilledEmail} style={{...css.btn("ghost"),padding:11}}>Send Email ↗</button>
               </div>
             </div>
           </>
@@ -2485,6 +2599,7 @@ Saujana Film Lab Bali`;
                     </div>
                     <div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>
                       {fmtDT(o.createdAt)} · {o.film}
+                      <div style={{color:"var(--muted)",marginTop:3}}>Negatives collection: {SaujanaNegativeCollection.normalize(o.collectNegatives) === "yes" ? "Yes" : SaujanaNegativeCollection.normalize(o.collectNegatives) === "no" ? "No" : "N/A"}</div>
                     </div>
                   </div>
                   <button onClick={()=>loadPastOrder(o)}
@@ -2761,6 +2876,7 @@ async function updateCustomerInfo() {
                       <span style={{fontSize:11,color:"var(--muted)"}}>{o.film}</span>
                     </div>
                     <div style={{fontSize:10,color:"var(--dim)",marginTop:3}}>{fmtDT(o.createdAt)}</div>
+                    <div style={{fontSize:11,color:"var(--muted)",marginTop:3}}>Negatives collection: {SaujanaNegativeCollection.normalize(o.collectNegatives) === "yes" ? "Yes" : SaujanaNegativeCollection.normalize(o.collectNegatives) === "no" ? "No" : "N/A"}</div>
                   </div>
                   {o.notes&&<div style={{fontSize:10,color:"var(--muted)",maxWidth:160,textAlign:"right"}}>{o.notes}</div>}
                   {o.driveLink&&<a href={deliveryUrl(o)} target="_blank" rel="noopener"
@@ -2933,6 +3049,14 @@ function App() {
     }
   }
 
+  function handleOrderCollectionSaved(saved) {
+    setOrders(previous => {
+      const next = previous.map(order => order.id === saved.id ? {...order,collectNegatives:saved.collectNegatives} : order);
+      writeDispatchCache(customers,next);
+      return next;
+    });
+  }
+
   function handleOrderSaved(saved, custId) {
     rememberOrderNumber(saved?.id, saved?.orderNumber);
     setOrders(p=>[{...saved,createdAt:Date.now()},...p]);
@@ -3055,7 +3179,7 @@ function App() {
             Connecting to {API_MODE === "supabase" ? "Dispatch Worker..." : "Google Sheets..."}
           </div>
         ) : tab==="dispatch" ? (
-          <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved}
+          <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved} onOrderCollectionSaved={handleOrderCollectionSaved}
             prefill={prefill} clearPrefill={()=>setPrefill(null)} resetSignal={newOrderSignal}/>
         ) : tab==="registry" ? (
   <Registry customers={customers} orders={orders}

@@ -19,7 +19,7 @@
     };
     if (choice === "no") return {
       title:"ALL YOURS, RIGHT HERE.",
-      body:"You chose not to collect the negatives for this order, so you're all good for now! Thanks so much for dropping by and trusting us with your film. Hope to see you back at the lab again soon!"
+      body:"You chose not to collect the negatives for this order, so you're all good for now! Hope to see you back at the lab again soon!"
     };
     return null;
   }

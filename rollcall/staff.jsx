@@ -1,27 +1,39 @@
 (function(){
   const {useState,useEffect,useRef}=React;
   const AUTH='saujana-auth',KEY='saujana-contact-sheets-admin-key';
+  const DEVICE='saujana-roll-call-session';
+  const remembered=()=>{try{return localStorage.getItem(DEVICE)||'';}catch{return '';}};
+  const remember=token=>{try{if(token)localStorage.setItem(DEVICE,token);else localStorage.removeItem(DEVICE);}catch{}};
   const ENDPOINT=/^(localhost|127\.0\.0\.1)$/.test(location.hostname)?'/api':'https://bali-dispatch-api.saujanalab-bali.workers.dev';
   async function api(action,data={}){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
     try{
       const response=await fetch(`${ENDPOINT}?action=${encodeURIComponent(action)}`,{
         method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',signal:controller.signal,
-        body:JSON.stringify({adminKey:sessionStorage.getItem(KEY)||'',...data})
+        body:JSON.stringify({...((remembered()&&!data.adminKey)?{rollCallSession:remembered()}:{adminKey:sessionStorage.getItem(KEY)||''}),...data})
       });
       const result=await response.json();
+      if(response.status===401){remember('');window.dispatchEvent(new Event('roll-call-sign-in-required'));}
       if(!response.ok||result?.error)throw Error(result?.error||'Could not connect. Try again.');
       return result;
     }catch(error){if(error.name==='AbortError')throw Error('Connection timed out. Please try again.');throw error;}
     finally{clearTimeout(timer);}
   }
   function App(){
-    const [signedIn,setSignedIn]=useState(sessionStorage.getItem(AUTH)==='1'&&!!sessionStorage.getItem(KEY));
+    const [signedIn,setSignedIn]=useState(!!remembered()||(sessionStorage.getItem(AUTH)==='1'&&!!sessionStorage.getItem(KEY)));
     const [password,setPassword]=useState(''),[loginBusy,setLoginBusy]=useState(false),[loginError,setLoginError]=useState('');
     const [search,setSearch]=useState(''),[membersOnly,setMembersOnly]=useState(false),[offset,setOffset]=useState(0);
     const [result,setResult]=useState({customers:[],total:0}),[loading,setLoading]=useState(false),[error,setError]=useState('');
     const [selected,setSelected]=useState(null),[revision,setRevision]=useState(0);
-    const sequence=useRef(0),searchInput=useRef(null);
+    const sequence=useRef(0),searchInput=useRef(null),sessionEpoch=useRef(0);
+    useEffect(()=>{
+      const epoch=sessionEpoch.current;
+      const expired=()=>{sessionEpoch.current++;sessionStorage.removeItem(KEY);sessionStorage.removeItem(AUTH);setSignedIn(false);setSelected(null);setResult({customers:[],total:0});setLoginError('Please sign in again.');};
+      window.addEventListener('roll-call-sign-in-required',expired);
+      const renewal=remembered()?api('verifyRollCallStaff'):sessionStorage.getItem(KEY)?api('verifyContactSheetAdmin',{rememberRollCall:true}):null;
+      renewal?.then(result=>{if(epoch===sessionEpoch.current)remember(result.rollCallSession);}).catch(()=>{});
+      return()=>{sessionEpoch.current++;window.removeEventListener('roll-call-sign-in-required',expired);};
+    },[]);
     useEffect(()=>{
       if(!signedIn)return;
       const current=++sequence.current;
@@ -35,12 +47,12 @@
     },[signedIn,search,membersOnly,offset,revision]);
     async function login(event){
       event.preventDefault();if(loginBusy)return;setLoginBusy(true);setLoginError('');
-      try{await api('verifyContactSheetAdmin',{adminKey:password});sessionStorage.setItem(KEY,password);sessionStorage.setItem(AUTH,'1');setPassword('');setSignedIn(true);}
+      try{const result=await api('verifyContactSheetAdmin',{adminKey:password,rememberRollCall:true});remember(result.rollCallSession);sessionStorage.setItem(KEY,password);sessionStorage.setItem(AUTH,'1');setPassword('');setSignedIn(true);}
       catch(error){setLoginError(error.message);}
       finally{setLoginBusy(false);}
     }
     function back(){setSelected(null);setRevision(value=>value+1);setTimeout(()=>searchInput.current?.focus(),0);}
-    function logout(){sessionStorage.removeItem(KEY);sessionStorage.removeItem(AUTH);setSelected(null);setResult({customers:[],total:0});setSignedIn(false);}
+    function logout(){sessionEpoch.current++;remember('');sessionStorage.removeItem(KEY);sessionStorage.removeItem(AUTH);setSelected(null);setResult({customers:[],total:0});setSignedIn(false);}
     useEffect(()=>{
       if(!selected)return;
       document.querySelector('.phone-member h1')?.focus();

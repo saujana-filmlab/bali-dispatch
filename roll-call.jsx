@@ -122,7 +122,8 @@
   }
   let proofAssets;
   async function createProof(item) {
-    const loadImage=src=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(Error('Could not load card artwork.'));image.src=new URL(src,location.href).href;});
+    const script=document.querySelector('script[src*="roll-call.jsx"]');
+    const loadImage=src=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(Error('Could not load card artwork.'));image.src=new URL(src,script?.src||location.href).href;});
     const [art,stamp]=await (proofAssets ||= Promise.all([loadImage('roll-call-assets/roll-call-back.png'),loadImage('roll-call-assets/stamp.png')]).catch(error=>{proofAssets=null;throw error;}));
     const canvas=document.createElement('canvas');canvas.width=1000;canvas.height=1900;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#f4eee2';ctx.fillRect(0,0,1000,1900);

@@ -1,5 +1,6 @@
 import {handleRollCall,protectRollCallCustomer} from './roll-call.js';
 import {rollCallBackupFile,readExportRows} from './roll-call-backup.js';
+import {createRollCallSession,requireRollCallStaff} from './roll-call-session.js';
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -440,7 +441,7 @@ async function verifyUploadNonce(env, token, orderNumber) {
 
 async function verifyContactSheetAdmin(env, data) {
   await requireContactSheetAdmin(env, data || {});
-  return {success: true};
+  return {success: true, ...(data?.rememberRollCall === true ? {rollCallSession:await createRollCallSession(env)} : {})};
 }
 
 async function beginContactSheetUpload(db, env, data) {
@@ -1071,8 +1072,13 @@ export default {
         ...queryData,
         ...(await readPayload(request))
       };
+      if (action === 'verifyRollCallStaff') {
+        if (request.method !== 'POST') return json({error:'Use POST.'},{status:405});
+        await requireRollCallStaff(env,data,requireContactSheetAdmin);
+        return json({success:true,rollCallSession:await createRollCallSession(env)},{headers:{'Cache-Control':'no-store'}});
+      }
       if (['getRollCall','rollCallCommand','getRollCallCard','getRollCallReport','getRollCallCustomers'].includes(action)) {
-        const result=await handleRollCall(action,data,db,env,requireContactSheetAdmin,request.method);
+        const result=await handleRollCall(action,data,db,env,(env,payload)=>requireRollCallStaff(env,payload,requireContactSheetAdmin),request.method);
         return json(result,{headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
       }
       const staffActions=new Set(['getCustomers','getInitialData','getOrders','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
@@ -1080,7 +1086,7 @@ export default {
       const result = await routeAction(action, data, db, env);
       return json(result,{headers:{'Cache-Control':'no-store'}});
     } catch (error) {
-      return json({error: error.message || String(error)}, {status: 500});
+      return json({error: error.message || String(error)}, {status: error.status || 500,headers:{'Cache-Control':'no-store'}});
     }
   }
 };

@@ -21,6 +21,7 @@
   <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js"></script>
   <script src="negative-collection.js?v=20261013-no-copy"></script>
   <script src="delivery-email.js?v=20261012-negatives"></script>
+  <link rel="stylesheet" href="roll-call.css?v=20261021"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
@@ -248,11 +249,25 @@ input,textarea{
       .dispatch-sidebar{width:100%;flex-basis:auto;overflow:visible;}
       .dispatch-main{overflow:visible;}
     }
+    @media(max-width:700px){
+      .dispatch-header{padding-inline:12px!important}
+      .dispatch-header-row{flex-wrap:wrap;gap:12px}
+      .dispatch-header-logo img{max-width:calc(100vw - 24px)}
+      .dispatch-header-actions{width:100%;flex-wrap:wrap;gap:6px!important}
+      .dispatch-header-actions .scoreboard{margin-left:auto}
+      .dispatch-tabs>button{flex:1;min-width:0;padding:10px 4px!important;font-size:9px!important}
+      .dispatch-content{padding:14px 12px!important}
+      .registry-workspace{display:block!important;height:auto!important}
+      .registry-list{width:100%!important;overflow:visible!important}
+      .registry-detail{width:100%;margin-top:16px}
+      .registry-detail>div{height:auto!important}
+    }
   </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel" src="contact-sheet-generator.jsx"></script>
+<script type="text/babel" src="roll-call.jsx?v=20261021"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -315,6 +330,10 @@ const API_RETRY_ACTIONS = new Set([
   "exportData"
 ]);
 const WORKER_ACTIONS = new Set([
+  "getRollCallReport",
+  "getRollCall",
+  "rollCallCommand",
+  "getRollCallCard",
   "dispatchHealthcheck",
   "healthcheck",
   "getInitialData",
@@ -478,6 +497,7 @@ async function apiCall(action, data=null) {
     };
 
     const runOnce = async () => {
+      if(endpoint===WORKER_API)return await postJson(JSON.stringify({adminKey:getContactSheetAdminKey(),...(data||{})}));
       if (data) return await postJson(JSON.stringify(data));
 
       try {
@@ -1088,7 +1108,7 @@ function ExportDataButton() {
               disabled={exporting || !pw.trim()}
               style={{...css.btn("blue"),width:"100%",padding:12,opacity:exporting || !pw.trim()?0.6:1}}
             >
-              {exporting ? "Exporting..." : "Download CSV Files"}
+              {exporting ? "Exporting..." : "Download export files"}
             </button>
 
             {files.length > 0 && (
@@ -1704,7 +1724,14 @@ function addRoll() {
 
       deliveryOrder.collectNegatives = SaujanaNegativeCollection.normalize((completed?.order || saved).collectNegatives);
       setCollectNegatives(deliveryOrder.collectNegatives);
-      const longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
+      let longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
+      if (saved.rollCallToken) {
+        const withCard = new URL(longUrl);
+        const fragment = new URLSearchParams(withCard.hash.slice(1));
+        fragment.set('rollCall',saved.rollCallToken);
+        withCard.hash = fragment.toString();
+        longUrl = withCard.href;
+      }
       const shortUrl = longUrl;
       onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
@@ -1713,6 +1740,7 @@ function addRoll() {
       setPreviewRoll(0);
       setResult({
         id:saved.id,
+        customerId:selCust?.id || saved.customerId || "",
         url:longUrl,
         shortUrl,
         previewUrl,
@@ -2001,6 +2029,7 @@ Saujana Film Lab Bali`;
     });
     setResult({
         id:o.id,
+        customerId:o.customerId || "",
         url: longUrl,
         shortUrl: longUrl, 
         previewUrl: longUrl,
@@ -2481,6 +2510,12 @@ Saujana Film Lab Bali`;
         />
         {result ? (
           <>
+            <SaujanaRollCall.OrderPanel key={result.id} order={result} customerId={result.customerId} api={(action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()})} onCard={token=>setResult(previous=>{
+              if (!previous || previous.id!==result.id) return previous;
+              const url=new URL(previous.url);const fragment=new URLSearchParams(url.hash.slice(1));fragment.set('rollCall',token);url.hash=fragment.toString();
+              if(previous.url===url.href) return previous;
+              return {...previous,url:url.href,shortUrl:url.href,previewUrl:url.href};
+            })}/>
             <div style={css.card}>
               <span style={css.secLabel}>Negative Collection</span>
               <div style={{fontSize:13,color:"var(--white)"}}>Saved: {result.collectNegatives === "yes" ? "Yes" : result.collectNegatives === "no" ? "No" : "N/A"}</div>
@@ -2625,6 +2660,16 @@ function Registry({customers, orders, onAdd, onUpdate, onDelete, onNewOrderFor})
   const [search, setSearch]       = useState("");
   const [sortBy, setSortBy]       = useState("name");
   const [selected, setSelected]   = useState(null);
+  const [customerTab, setCustomerTab] = useState("orders");
+  useEffect(()=>{setCustomerTab("orders");},[selected?.id]);
+  function switchCustomerTab(event) {
+    const keys=["ArrowLeft","ArrowRight","Home","End"];
+    if(!keys.includes(event.key))return;
+    event.preventDefault();
+    const next=event.key==="Home"?"orders":event.key==="End"?"roll-call":customerTab==="orders"?"roll-call":"orders";
+    setCustomerTab(next);
+    event.currentTarget.parentElement.querySelector(next==="orders"?"#registry-orders-tab":"#registry-roll-call-tab").focus();
+  }
   const [editing, setEditing]     = useState(null);
   const [form, setForm]           = useState({name:"",email:"",phone:""});
   const [saving, setSaving]       = useState(false);
@@ -2701,16 +2746,17 @@ async function updateCustomerInfo() {
       if (selected?.id===id) setSelected(null);
       showToast("Removed ✓");
     } catch(e) {
-      showToast("Could not remove from Sheets");
+      showToast(e.message || "Could not remove customer");
     }
   }
 
   return (
-    <div style={{display:"flex",gap:16,height:"calc(100vh - 130px)"}}>
+    <div className="registry-workspace" style={{display:"flex",gap:16,height:"calc(100vh - 130px)"}}>
       <Toast msg={toast}/>
 
       {/* Left */}
-      <div style={{width:380,flexShrink:0,display:"flex",flexDirection:"column",gap:10,overflowY:"auto"}}>
+      <div className="registry-list" style={{width:380,flexShrink:0,display:"flex",flexDirection:"column",gap:10,overflowY:"auto"}}>
+        <a className="rc-phone-entry" href="rollcall/">Enter Roll Call Office ↗</a>
         {/* Search + Add */}
         <div style={{display:"flex",gap:8}}>
           <input value={search} onChange={e=>{setSearch(e.target.value); setPage(1);}}
@@ -2823,7 +2869,7 @@ async function updateCustomerInfo() {
       </div>
 
       {/* Right: Detail */}
-      <div style={{flex:1,minWidth:0}}>
+      <div className="registry-detail" style={{flex:1,minWidth:0}}>
         {selected ? (
           <div style={{...css.card,height:"100%",display:"flex",flexDirection:"column"}}>
             {/* Header */}
@@ -2860,9 +2906,16 @@ async function updateCustomerInfo() {
               ))}
             </div>
 
-            {/* Orders */}
+            <div className="registry-customer-tabs" role="tablist" aria-label="Customer details">
+              <button type="button" role="tab" id="registry-orders-tab" aria-controls="registry-orders-panel" aria-selected={customerTab==="orders"} tabIndex={customerTab==="orders"?0:-1} onClick={()=>setCustomerTab("orders")} onKeyDown={switchCustomerTab}>Orders <span>{custOrders.length}</span></button>
+              <button type="button" role="tab" id="registry-roll-call-tab" aria-controls="registry-roll-call-panel" aria-selected={customerTab==="roll-call"} tabIndex={customerTab==="roll-call"?0:-1} onClick={()=>setCustomerTab("roll-call")} onKeyDown={switchCustomerTab}>Roll Call</button>
+            </div>
+            <div role="tabpanel" id="registry-roll-call-panel" className="registry-tab-panel" aria-labelledby="registry-roll-call-tab" hidden={customerTab!=="roll-call"}>
+              <SaujanaRollCall.CustomerPanel key={selected.id} customer={selected} api={(action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()})}/>
+            </div>
+            <div role="tabpanel" id="registry-orders-panel" className="registry-tab-panel" aria-labelledby="registry-orders-tab" hidden={customerTab!=="orders"}>
             <span style={css.secLabel}>Order History</span>
-            <div style={{flex:1,overflowY:"auto"}}>
+            <div className="registry-order-list">
               {custOrders.length===0 ? (
                 <div style={{textAlign:"center",padding:32,color:"var(--dim)",fontSize:12}}>No orders yet</div>
               ) : custOrders.map(o=>(
@@ -2886,6 +2939,7 @@ async function updateCustomerInfo() {
                   </a>}
                 </div>
               ))}
+            </div>
             </div>
           </div>
         ) : (
@@ -3103,18 +3157,18 @@ function App() {
         </div>
       )}
       {/* Header */}
-      <div style={{background:"var(--dark)",borderBottom:"1px solid var(--border)",
+      <div className="dispatch-header" style={{background:"var(--dark)",borderBottom:"1px solid var(--border)",
                    padding:"0 24px",position:"sticky",top:0,zIndex:100,backdropFilter:"blur(14px)",
                    boxShadow:"0 14px 34px rgba(0,0,0,0.22)"}}>
         <div style={{maxWidth:1500,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14}}>
-            <div>
+          <div className="dispatch-header-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:14}}>
+            <div className="dispatch-header-logo">
               <img className="brand-logo" src="dd-horizontal.png" alt="Darkroom Dispatch Logo" style={{height:45, objectFit:"contain", display:"block"}}/>
               <div style={{fontSize:8,letterSpacing:"0.3em",textTransform:"uppercase",color:"var(--muted)",marginTop:8}}>
                 Film Lab Bali · Operations
               </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div className="dispatch-header-actions" style={{display:"flex",alignItems:"center",gap:12}}>
               {syncing&&<span style={{fontSize:9,color:"var(--muted)",letterSpacing:"0.2em",textTransform:"uppercase"}}>Syncing...</span>}
               <button
                 onClick={() => setTheme(t => t === "day" ? "night" : "day")}
@@ -3151,8 +3205,8 @@ function App() {
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
             <ExportDataButton/>
           </div>
-          <div style={{display:"flex",marginTop:10}}>
-            {[{id:"dispatch",l:"Darkroom Dispatch"},{id:"registry",l:"Customer Registry"},{id:"stock",l:"Stock Count"}].map(t=>(
+          <div className="dispatch-tabs" style={{display:"flex",marginTop:10}}>
+            {[{id:"dispatch",l:"Darkroom Dispatch"},{id:"registry",l:"Customer Registry"},{id:"stock",l:"Stock + Report"}].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{
                 padding:"10px 24px",background:"none",
                 border:"none",borderBottom:`2px solid ${tab===t.id?"var(--blue-l)":"transparent"}`,
@@ -3166,7 +3220,7 @@ function App() {
       </div>
 
       {/* Content */}
-      <div style={{maxWidth:tab==="dispatch"?1500:1100,margin:"0 auto",padding:"20px 24px"}}>
+      <div className="dispatch-content" style={{maxWidth:tab==="dispatch"?1500:1100,margin:"0 auto",padding:"20px 24px"}}>
         {loadError && (
           <div style={{marginBottom:16,padding:"12px 14px",border:"1px solid var(--red)",background:"rgba(255,80,80,0.08)",
                        color:"var(--light)",fontSize:11,lineHeight:1.6}}>
@@ -3235,6 +3289,8 @@ function StockTracker() {
   const [stockRefreshStatus, setStockRefreshStatus] = useState("");
   const [saving, setSaving]       = useState(false);
   const [report, setReport]       = useState("");
+  const [rollCallReport,setRollCallReport] = useState(null);
+  const [copyingReport,setCopyingReport] = useState(false);
   const [copied, setCopied]       = useState(false);
   const [toast, setToast]         = useState("");
   // Add item UI
@@ -3434,12 +3490,9 @@ function StockTracker() {
     }
   }
 
-  function buildReportText(sourceStock=stock) {
+  function buildReportText(sourceStock=stock,redemptions=rollCallReport) {
     const now = new Date();
-    const day = now.getDate();
-    const month = now.toLocaleString("en-GB", {month:"long"});
-    const year = now.getFullYear();
-    const dateStr = `${day} ${month} ${year}`;
+    const dateStr = new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Makassar",day:"numeric",month:"long",year:"numeric"}).format(now);
 
     let lines = [`${dateStr}`, ``];
     orderedStock(sourceStock).forEach(cat => {
@@ -3452,6 +3505,7 @@ function StockTracker() {
       });
     });
 
+    if(redemptions)lines.push("",SaujanaRollCall.dailyReportText(redemptions));
     return lines.join("\n");
   }
 
@@ -3493,7 +3547,9 @@ function StockTracker() {
   async function finalizeAndGenerateReport() {
     setSaving(true);
     try {
-      const reportText = buildReportText(stock);
+      const redemptions=await SaujanaRollCall.loadDailyReport((action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()}));
+      setRollCallReport(redemptions);
+      const reportText = buildReportText(stock,redemptions);
       const finalizedStock = finalizeStock(stock);
       const res = await saveFinalizedStockWithHistory(stock, finalizedStock, reportText);
       const savedStock = markStockSaved(finalizedStock, res.timestamp);
@@ -3683,21 +3739,22 @@ function StockTracker() {
   }
 
   function copyReport() {
-    navigator.clipboard.writeText(report).then(() => {
-      setCopied(true);
-      showToast("Report copied!");
-      setTimeout(() => setCopied(false), 2000);
-    });
+    copyWhatsAppReport();
   }
 
-  function copyWhatsAppReport() {
-    const text = buildReportText(stock);
-    setReport(text);
-    navigator.clipboard.writeText(text).then(() => {
+  async function copyWhatsAppReport() {
+    setCopyingReport(true);
+    try {
+      const redemptions=await SaujanaRollCall.loadDailyReport((action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()}));
+      setRollCallReport(redemptions);
+      const text = buildReportText(stock,redemptions);
+      setReport(text);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       showToast("WhatsApp report copied");
       setTimeout(() => setCopied(false), 2000);
-    });
+    } catch(error){showToast(error.message||"Could not copy report.");}
+    finally{setCopyingReport(false);}
   }
 
   if (loading) return (
@@ -3712,10 +3769,10 @@ function StockTracker() {
         fontSize:12,color:"var(--blue-l)",zIndex:999}}>{toast}</div>}
 
       {/* Header row */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div className="stock-report-toolbar" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div>
           <div style={{fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",fontSize:24,fontWeight:800,color:"var(--white)",letterSpacing:"0.02em"}}>
-            Stock Count
+            Stock + Report
           </div>
           <div style={{fontSize:9,letterSpacing:"0.35em",textTransform:"uppercase",color:"var(--muted)",marginTop:4}}>
             End of Day · Inventory Check
@@ -3730,15 +3787,15 @@ function StockTracker() {
             style={{...css.btn("blue"),padding:"10px 18px",opacity:saving?0.5:1}}>
             {saving?"Saving...":"Finalize + Save Report"}
           </button>
-          <button onClick={copyWhatsAppReport}
+          <button onClick={copyWhatsAppReport} disabled={copyingReport||saving}
             style={{...css.btn("primary"),padding:"10px 18px"}}>
-            Copy WhatsApp
+            {copyingReport?"Preparing report...":"Copy WhatsApp"}
           </button>
         </div>
       </div>
 
       {/* Stock grid */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(360px,1fr))",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,360px),1fr))",gap:12,marginBottom:16}}>
         {orderedStockEntries().map(({cat, catIdx}) => {
           const hasVisibleItems = (cat.items || []).some(item => item.visible !== false);
           const isEmptyCategory = !cat.items || cat.items.length === 0;
@@ -4047,6 +4104,7 @@ function StockTracker() {
         )}
       </div>
 
+      <SaujanaRollCall.ReportPanel report={rollCallReport} onChange={setRollCallReport} api={(action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()})}/>
       {/* Report output */}
       {report && (
         <div style={{...css.card,marginTop:8}}>
@@ -4060,7 +4118,7 @@ function StockTracker() {
             </button>
           </div>
           <pre style={{fontSize:13,lineHeight:1.9,color:"var(--white)",
-                       fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",whiteSpace:"pre-wrap",
+                       fontFamily:"\"Helvetica Neue\",Helvetica,Arial,sans-serif",whiteSpace:"pre-wrap",overflowWrap:"anywhere",
                        background:"var(--dark)",border:"1px solid var(--border)",
                        borderRadius:2,padding:16}}>
             {report}

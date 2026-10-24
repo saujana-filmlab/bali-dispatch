@@ -1,3 +1,6 @@
+import {handleRollCall,protectRollCallCustomer} from './roll-call.js';
+import {rollCallBackupFile,readExportRows} from './roll-call-backup.js';
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -271,10 +274,7 @@ function csvFile(headers, rows) {
 }
 
 async function getCustomers(db) {
-  const rows = await db.select(
-    "customers",
-    "?select=id,legacy_customer_id,name,email,phone,created_at,orders(created_at)&order=created_at.desc"
-  );
+  const rows = await readExportRows(db,"customers","id,legacy_customer_id,name,email,phone,created_at,orders(created_at)","created_at.desc,id.asc");
   return rows.map(row => {
     const orders = Array.isArray(row.orders) ? row.orders : [];
     const lastOrderDate = orders.length
@@ -328,6 +328,8 @@ async function deleteCustomer(db, data) {
   const id = cleanText(typeof data === "string" ? data : data.id || data.customerId);
   if (!id) return {error: "Missing customer id"};
 
+  await protectRollCallCustomer(db,id);
+
   const filters = [eqFilter("legacy_customer_id", id)];
   if (isUuid(id)) filters.push(eqFilter("id", id));
   const customers = await db.select(
@@ -347,10 +349,7 @@ async function deleteCustomer(db, data) {
 }
 
 async function getOrders(db) {
-  const rows = await db.select(
-    "orders",
-    "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at&order=created_at.desc"
-  );
+  const rows = await readExportRows(db,"orders","id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at","created_at.desc,id.asc");
   return rows.map(orderFromRow);
 }
 
@@ -739,7 +738,8 @@ async function addOrder(db, data) {
   }));
   if (recipientRows.length) await db.insert("order_recipients", recipientRows, {returning: "minimal"});
 
-  return orderFromRow(order);
+  const member = order.customer_id ? await db.select('rc_members', `?select=card_token&customer_id=eq.${encodeURIComponent(order.customer_id)}&limit=1`) : [];
+  return {...orderFromRow(order), rollCallToken:member[0]?.card_token||null};
 }
 
 async function updateCollectNegatives(db, env, data) {
@@ -890,11 +890,11 @@ async function exportData(db, env, data) {
     stockItems,
     stockHistory
   ] = await Promise.all([
-    db.select("customers", "?select=id,legacy_customer_id,name,email,phone,source,created_at&order=created_at.desc&limit=10000"),
-    db.select("orders", "?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,contact_sheets_enabled,created_at&order=created_at.desc&limit=10000"),
-    db.select("order_recipients", "?select=order_id,email,is_primary&order=is_primary.desc,email.asc&limit=10000"),
-    db.select("stock_items", "?select=category,name,qty,visible,last_updated&order=category.asc,name.asc&limit=10000"),
-    db.select("stock_count_sessions", "?select=legacy_history_id,created_at,action,report,before_stock,after_stock&order=created_at.desc&limit=10000")
+    readExportRows(db,"customers","id,legacy_customer_id,name,email,phone,source,created_at","created_at.desc,id.asc"),
+    readExportRows(db,"orders","id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,contact_sheets_enabled,created_at","created_at.desc,id.asc"),
+    readExportRows(db,"order_recipients","order_id,email,is_primary","order_id.asc,email.asc"),
+    readExportRows(db,"stock_items","category,name,qty,visible,last_updated","category.asc,name.asc"),
+    readExportRows(db,"stock_count_sessions","legacy_history_id,created_at,action,report,before_stock,after_stock","created_at.desc,legacy_history_id.asc")
   ]);
 
   const recipientsByOrder = new Map();
@@ -992,6 +992,7 @@ async function exportData(db, env, data) {
     }
   ];
 
+  files.push(await rollCallBackupFile(db));
   return {success: true, exportedAt, files};
 }
 
@@ -1070,8 +1071,14 @@ export default {
         ...queryData,
         ...(await readPayload(request))
       };
+      if (['getRollCall','rollCallCommand','getRollCallCard','getRollCallReport','getRollCallCustomers'].includes(action)) {
+        const result=await handleRollCall(action,data,db,env,requireContactSheetAdmin,request.method);
+        return json(result,{headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
+      }
+      const staffActions=new Set(['getCustomers','getInitialData','getOrders','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
+      if(staffActions.has(action))await requireContactSheetAdmin(env,data);
       const result = await routeAction(action, data, db, env);
-      return json(result);
+      return json(result,{headers:{'Cache-Control':'no-store'}});
     } catch (error) {
       return json({error: error.message || String(error)}, {status: 500});
     }

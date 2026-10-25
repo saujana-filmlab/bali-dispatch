@@ -62,7 +62,7 @@ export async function handleRollCall(action,data,db,env,authorize,method) {
   if(action!=='rollCallCommand') throw new Error('Unknown Roll Call action.');
   const operation=clean(data.operation),actor='Dispatch staff';
   if(!uuid(data.requestId)) throw new Error('A request ID is required.');
-  if(!['enroll','redeem','reverse','add_stamps','remove_stamps'].includes(operation)) throw new Error('Unknown Roll Call operation.');
+  if(!['enroll','redeem','reverse','add_stamps','remove_stamps','set_reward_date'].includes(operation)) throw new Error('Unknown Roll Call operation.');
   const input={...data.input};
   if(operation==='enroll') {
     input.customerId=await resolveId(db,'customers','legacy_customer_id',input.customerId);
@@ -70,6 +70,11 @@ export async function handleRollCall(action,data,db,env,authorize,method) {
     input.cardToken=btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   } else if(!uuid(input.memberId)) throw new Error('Select a saved Roll Call member.');
   if(operation==='reverse'&&!Object.prototype.hasOwnProperty.call(input,'expectedUsedAt'))throw new Error('Refresh this card before restoring a reward.');
+  if(operation==='set_reward_date'){
+    if(JSON.stringify(input).length>8000)throw new Error('Roll Call request is too large.');
+    if(!uuid(input.rewardId)||!Number.isInteger(input.expectedVersion)||!/^\d{4}-\d{2}-\d{2}$/.test(clean(input.earnedOn)))throw new Error('Enter a valid voucher stamp date and refresh the card before saving.');
+    return {snapshot:await db.rpc('rc_set_reward_date',{p_member:input.memberId,p_reward:input.rewardId,p_earned_on:input.earnedOn,p_expected_version:input.expectedVersion,p_staff:actor,p_request:data.requestId})};
+  }
   if(input.orderId) input.orderId=await resolveId(db,'orders','legacy_order_id',input.orderId);
   if(JSON.stringify(input).length>8000) throw new Error('Roll Call request is too large.');
   return {snapshot:await db.rpc('roll_call_apply',{p_action:operation,p_payload:input,p_staff:actor,p_request:data.requestId})};

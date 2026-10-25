@@ -35,6 +35,9 @@
 .rc-remove-controls{display:flex;align-items:center;gap:8px;margin-bottom:18px}
 .rc-staff .rc-remove-controls input{width:72px;margin:0;text-align:center}
 .rc-manage{padding-bottom:12px}
+.rc-voucher-date{flex-basis:100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0;color:var(--muted)}
+.rc-voucher-date>button{padding:6px 10px}.rc-date-editor{display:block;min-width:0}.rc-date-editor>label{max-width:300px;margin:4px 0 8px}.rc-date-editor input{font-variant-numeric:tabular-nums;min-height:42px}
+.rc-date-editor>small{display:block}.rc-date-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.rc-date-editor .rc-error{margin:6px 0}
 .registry-detail>div{height:auto!important;min-height:100%}
 .rc-staff{flex-shrink:0}
 .rc-daily-report{margin:20px 0}

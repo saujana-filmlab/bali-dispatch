@@ -3,6 +3,34 @@
   const cardLink=token=>`${window.ROLL_CALL_BASE || 'https://bali-scans.saujanalab.com'}/roll-call/#token=${encodeURIComponent(token)}`;
   const available=snapshot=>(snapshot?.rewards||[]).filter(reward=>reward.displayStatus==='available');
   const when=value=>new Date(value).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'});
+  const voucherDate=value=>value?new Date(value).toLocaleDateString('en-GB',{timeZone:'Asia/Makassar',day:'2-digit',month:'2-digit',year:'numeric'}):'';
+  function parseVoucherDate(value){
+    const match=String(value).trim().replace(/^(\d{2})(\d{2})(\d{4})$/,'$1/$2/$3').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(!match)return null;
+    const [,day,month,year]=match.map(Number),date=new Date(Date.UTC(year,month-1,day));
+    if(year<1900||date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return null;
+    return date.toISOString().slice(0,10);
+  }
+  function voucherExpiry(day){const date=new Date(day+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+30);return voucherDate(date);}
+  function VoucherDateEditor({item,busy,onConfirm}){
+    const [editing,setEditing]=useState(!item.earnedAt),[draft,setDraft]=useState(voucherDate(item.earnedAt)),[error,setError]=useState('');
+    useEffect(()=>{setDraft(voucherDate(item.earnedAt));setError('');setEditing(!item.earnedAt);},[item.id,item.earnedAt]);
+    const parsed=parseVoucherDate(draft);
+    async function confirm(){
+      setError('');
+      if(!parsed)return setError('Enter a valid date as DD/MM/YYYY.');
+      const today=parseVoucherDate(voucherDate(new Date()));
+      if(parsed>today)return setError('Voucher stamp date cannot be in the future.');
+      if(await onConfirm(parsed))setEditing(false);
+    }
+    if(!editing)return <div className="rc-voucher-date"><span>Stamp date: {voucherDate(item.earnedAt)}</span><button type="button" disabled={busy} onClick={()=>{setDraft(voucherDate(item.earnedAt));setEditing(true);}}>Edit date</button></div>;
+    return <div className="rc-voucher-date rc-date-editor">
+      <label>Voucher stamp date (DD/MM/YYYY)<input type="text" inputMode="numeric" maxLength="10" autoComplete="off" spellCheck="false" placeholder="DD/MM/YYYY" aria-label={`Voucher stamp date for card ${item.cardNumber} stamp ${item.atStamp}`} aria-invalid={!!error} value={draft} disabled={busy} onChange={event=>{setDraft(event.target.value);setError('');}} onBlur={()=>{if(parsed)setDraft(voucherDate(parsed+'T00:00:00Z'));}} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.stopPropagation();confirm();}}}/></label>
+      {parsed&&<small>Valid until {voucherExpiry(parsed)}</small>}
+      <div className="rc-date-actions"><button type="button" className="rc-primary" disabled={busy} onClick={confirm}>{busy?'Saving...':'Confirm date'}</button>{item.earnedAt&&<button type="button" disabled={busy} onClick={()=>{setDraft(voucherDate(item.earnedAt));setError('');setEditing(false);}}>Cancel</button>}</div>
+      {error&&<p className="rc-error" role="alert">{error}</p>}
+    </div>;
+  }
   function useRecord(customerId,orderId,api) {
     const [record,setRecord]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
     const sequence=useRef(0);
@@ -25,9 +53,8 @@
     const state=useRecord(customer.id,null,api),snapshot=state.record?.snapshot;
     const [open,setOpen]=useState(false),[paper,setPaper]=useState({completedCards:0,currentStamps:0,unusedRewards:0});
     const [quantity,setQuantity]=useState(1),[removeQuantity,setRemoveQuantity]=useState(1),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
-    const [paperDates,setPaperDates]=useState({});
     const running=useRef(false),pending=useRef(null);
-    useEffect(()=>{setOpen(false);setNotice('');setQuantity(1);setRemoveQuantity(1);setPaperDates({});pending.current=null;setPaper({completedCards:0,currentStamps:0,unusedRewards:0});},[customer.id]);
+    useEffect(()=>{setOpen(false);setNotice('');setQuantity(1);setRemoveQuantity(1);pending.current=null;setPaper({completedCards:0,currentStamps:0,unusedRewards:0});},[customer.id]);
     async function command(operation,input,message) {
       if(running.current)return;
       running.current=true;setBusy(true);state.setError('');setNotice('');
@@ -41,7 +68,8 @@
         pending.current=null;state.setRecord({snapshot:result.snapshot,attached:false});
         setNotice(message);setQuantity(1);setRemoveQuantity(1);setOpen(false);
         if(window.BroadcastChannel){const updates=new BroadcastChannel('roll-call-updates');updates.postMessage({memberNumber:result.snapshot.member.number});updates.close();}
-      }catch(error){state.setError(error.message);}
+        return true;
+      }catch(error){state.setError(error.message);return false;}
       finally{running.current=false;setBusy(false);}
     }
     function addStamps() {
@@ -64,9 +92,9 @@
       return <div key={item.id} className="rc-reward-row">
         <span>Card {item.cardNumber} · stamp {item.atStamp}</span>
         <b>{item.displayStatus==='available'?'READY':item.displayStatus==='verify'?'CHECK DATE':item.displayStatus==='expired'?'EXPIRED':'USED'}</b>
-        {item.expiresAt&&<small>{item.displayStatus==='expired'?'Expired':'Valid until'} {new Date(item.expiresAt).toLocaleDateString('en-GB')}</small>}
-        {item.displayStatus==='verify'&&<label>Original paper stamp date<input type="date" aria-label={`Paper stamp date for card ${item.cardNumber} stamp ${item.atStamp}`} value={paperDates[item.id]||''} onChange={event=>setPaperDates({...paperDates,[item.id]:event.target.value})}/></label>}
-        {['available','verify'].includes(item.displayStatus)&&<button className="rc-primary" disabled={busy||item.displayStatus==='verify'&&!paperDates[item.id]} onClick={()=>command('redeem',{rewardId:item.id,paperEarnedOn:paperDates[item.id]},'Reward marked USED.')}>Mark used</button>}
+        {item.expiresAt&&<small>{item.displayStatus==='expired'?'Expired':'Valid until'} {voucherDate(item.expiresAt)}</small>}
+        {(manage||item.displayStatus==='verify')&&<VoucherDateEditor item={item} busy={busy} onConfirm={earnedOn=>command('set_reward_date',{rewardId:item.id,earnedOn,expectedVersion:snapshot.member.version},'Voucher date confirmed. Expiry updated.')}/>}
+        {item.displayStatus==='available'&&<button className="rc-primary" disabled={busy} onClick={()=>command('redeem',{rewardId:item.id},'Reward marked USED.')}>Mark used</button>}
         {manage&&['redeemed','used_on_paper'].includes(item.status)&&<button className="rc-primary" disabled={busy} onClick={()=>command('reverse',{rewardId:item.id},'Reward restored. Original expiry retained.')}>Mark ready</button>}
         {item.usedAt&&<small>Used {when(item.usedAt)}</small>}
       </div>;
@@ -98,7 +126,7 @@
           {rewards.map(item=>rewardRow(item,true))}
         </details>
         <details className="rc-disclosure"><summary>Activity</summary>
-          <ul className="rc-audit">{snapshot.audit.map(event=><li key={event.id}><strong>{event.action==='add_stamps'?`+${event.after?.input?.quantity||''} stamps`:event.action==='remove_stamps'?`-${event.after?.input?.quantity||''} stamps`:event.action==='redeem'?'Reward marked used':event.action==='undo_stamps'?'Stamps removed':event.action==='reverse'?'Reward restored':event.action}</strong><br/><time>{when(event.createdAt)}</time>{event.reason&&<p>{event.reason}</p>}</li>)}</ul>
+          <ul className="rc-audit">{snapshot.audit.map(event=><li key={event.id}><strong>{event.action==='add_stamps'?`+${event.after?.input?.quantity||''} stamps`:event.action==='remove_stamps'?`-${event.after?.input?.quantity||''} stamps`:event.action==='redeem'?'Reward marked used':event.action==='undo_stamps'?'Stamps removed':event.action==='reverse'?'Reward restored':event.action==='set_reward_date'?'Voucher date confirmed':event.action}</strong><br/><time>{when(event.createdAt)}</time>{event.action==='set_reward_date'&&<p>Stamp date: {voucherDate(event.after?.earnedAt)}<br/>Valid until: {voucherDate(event.after?.expiresAt)}</p>}{event.reason&&<p>{event.reason}</p>}</li>)}</ul>
         </details>
       </>}
       {!snapshot&&!state.loading&&!state.error&&<button className="rc-primary" disabled={busy} onClick={()=>setOpen(!open)}>Enable Roll Call</button>}

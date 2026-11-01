@@ -11,7 +11,7 @@ export async function handleAccess(action,data,db,env){
  if(typeof data.enabled!=='boolean'||!Number.isInteger(data.expectedVersion)||!uuid(data.requestId))throw Error('Refresh access settings before changing them.');
  const secret=String(env.ROLL_CALL_MASTER_PASSWORD||'');
  if(!secret)throw Error('The master password has not been configured.');
- if(!(/^\d{8,}$/.test(secret)||secret.length>=12)||secret.length>256)throw Error('Master password setup requires at least 12 characters or an 8-digit PIN.');
+ if(secret.length<8||secret.length>256)throw Error('Master password setup requires at least 8 characters.');
  if(!await db.rpc('rc_access_attempt'))throw Error('Too many master-password attempts. Try again in 15 minutes.');
  const digest=async value=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));
  const a=await digest(secret),b=await digest(String(data.masterPassword||'').slice(0,256));

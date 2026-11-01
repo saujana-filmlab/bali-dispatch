@@ -289,6 +289,8 @@ const API_TIMEOUTS = {
   getInitialData: 12000,
   getCustomers: 12000,
   getOrders: 12000,
+  getOrderDeliveryLink: 12000,
+  saveOrderDeliveryLink: 12000,
   getStock: 12000,
   getStockHistory: 12000,
   verifyContactSheetAdmin: 15000,
@@ -312,6 +314,7 @@ const API_RETRY_ACTIONS = new Set([
   "getInitialData",
   "getCustomers",
   "getOrders",
+  "getOrderDeliveryLink",
   "getOrderByNumber",
   "getStock",
   "getStockHistory",
@@ -342,6 +345,8 @@ const WORKER_ACTIONS = new Set([
   "updateCustomer",
   "deleteCustomer",
   "getOrders",
+  "getOrderDeliveryLink",
+  "saveOrderDeliveryLink",
   "getOrder",
   "getOrderByNumber",
   "addOrder",
@@ -794,6 +799,27 @@ const deliveryUrl = o => {
   const collectionChoice = SaujanaNegativeCollection.normalize(o.collectNegatives);
   return `${BASE_URL}/?theme=bali&negative=${encodeURIComponent(deliveryTheme)}&date=${encodeURIComponent(deliveryDate)}&order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}${collectionChoice ? `&collectNegatives=${collectionChoice}` : ""}`;
 };
+
+async function staffDeliveryUrl(order) {
+  const response = await apiCall("getOrderDeliveryLink", {orderNumber:order.orderNumber});
+  if (!response || response.error) throw new Error(response?.error || "Could not load this delivery link");
+  const url = new URL(response.deliveryUrl || deliveryUrl(order));
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  if (response.rollCallToken) fragment.set("rollCall", response.rollCallToken);
+  else fragment.delete("rollCall");
+  url.hash = fragment.toString();
+  return url.href;
+}
+
+function openStaffDelivery(order, onError) {
+  const tab = window.open("about:blank", "_blank");
+  if (!tab) return onError("Allow pop-ups to open this delivery page.");
+  tab.opener = null;
+  staffDeliveryUrl(order).then(url => tab.location.replace(url)).catch(error => {
+    tab.close();
+    onError(error.message || "Could not open this delivery page.");
+  });
+}
 
 const DELIVERY_THEME_OPTIONS = [
   {value:"colour", label:"Colour Negative", accent:"#ff6425", paper:"#f3c3a2", surface:"#180b06"},
@@ -1724,14 +1750,21 @@ function addRoll() {
 
       deliveryOrder.collectNegatives = SaujanaNegativeCollection.normalize((completed?.order || saved).collectNegatives);
       setCollectNegatives(deliveryOrder.collectNegatives);
+      setPublishStage("Linking member card");
+      const linkContext = await apiCall("getOrderDeliveryLink", {orderNumber:deliveryOrder.orderNumber});
+      if (!linkContext || linkContext.error) throw new Error(linkContext?.error || "Could not check Roll Call membership");
       let longUrl = deliveryUrl({...deliveryOrder,contactSheets:uploadedSheets});
-      if (saved.rollCallToken) {
+      if (linkContext.rollCallToken) {
         const withCard = new URL(longUrl);
         const fragment = new URLSearchParams(withCard.hash.slice(1));
-        fragment.set('rollCall',saved.rollCallToken);
+        fragment.set('rollCall',linkContext.rollCallToken);
         withCard.hash = fragment.toString();
         longUrl = withCard.href;
       }
+      setPublishStage("Saving delivery link");
+      const savedLink = await apiCall("saveOrderDeliveryLink", {orderNumber:deliveryOrder.orderNumber,deliveryUrl:longUrl});
+      if (!savedLink?.success) throw new Error(savedLink?.error || "Could not save the delivery link");
+      longUrl = savedLink.deliveryUrl;
       const shortUrl = longUrl;
       onOrderSaved({...(completed?.order || saved),...deliveryOrder,contactSheets:uploadedSheets},selCust?.id);
 
@@ -1984,6 +2017,10 @@ Saujana Film Lab Bali`;
     .slice(0,12);
 
  async function loadPastOrder(o) {
+    setResult(null);
+    let savedLink;
+    try { savedLink = await staffDeliveryUrl(o); }
+    catch(error) { showToast(error.message || "Could not load the delivery link"); return; }
     collectionSaveRef.current += 1;
     setSavingCollection(false);
     // 1. Find the customer or default to empty
@@ -2021,12 +2058,7 @@ Saujana Film Lab Bali`;
     // 3. Update result UI
     const pastDeliveryTheme = normalizeDeliveryTheme(o.deliveryTheme);
     const pastDeliveryDate = String(o.deliveryDate || baliDeliveryDate());
-    const longUrl = deliveryUrl({
-      ...o,
-      deliveryFilm:pastDeliveryFilm,
-      deliveryTheme:pastDeliveryTheme,
-      deliveryDate:pastDeliveryDate
-    });
+    const longUrl = savedLink;
     setResult({
         id:o.id,
         customerId:o.customerId || "",
@@ -2641,11 +2673,11 @@ Saujana Film Lab Bali`;
                     style={{...css.btn(),padding:"7px 10px",fontSize:9,whiteSpace:"nowrap"}}>
                     Load
                   </button>
-                  <a href={deliveryUrl(o)} target="_blank" rel="noopener"
+                  <button type="button" onClick={()=>openStaffDelivery(o,showToast)}
                     style={{...css.btn("ghost"),padding:"7px 10px",fontSize:9,whiteSpace:"nowrap",
                       color:"var(--blue-l)",textDecoration:"none"}}>
                     Open ↗
-                  </a>
+                  </button>
                 </div>
               ))}
             </div>
@@ -2932,11 +2964,11 @@ async function updateCustomerInfo() {
                     <div style={{fontSize:11,color:"var(--muted)",marginTop:3}}>Negatives collection: {SaujanaNegativeCollection.normalize(o.collectNegatives) === "yes" ? "Yes" : SaujanaNegativeCollection.normalize(o.collectNegatives) === "no" ? "No" : "N/A"}</div>
                   </div>
                   {o.notes&&<div style={{fontSize:10,color:"var(--muted)",maxWidth:160,textAlign:"right"}}>{o.notes}</div>}
-                  {o.driveLink&&<a href={deliveryUrl(o)} target="_blank" rel="noopener"
+                  {o.driveLink&&<button type="button" onClick={()=>openStaffDelivery(o,window.alert)}
                     style={{...css.btn("ghost"),padding:"6px 10px",fontSize:9,whiteSpace:"nowrap",
                       color:"var(--blue-l)",textDecoration:"none"}}>
                     Open scans ↗
-                  </a>}
+                  </button>}
                 </div>
               ))}
             </div>

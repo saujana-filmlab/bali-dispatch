@@ -390,9 +390,44 @@ async function getOrderByNumber(db, data) {
 async function getOrderRowByNumber(db, orderNumber) {
   const rows = await db.select(
     "orders",
-    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
+    `?select=id,legacy_order_id,order_number,customer_id,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
   );
   return rows[0] || null;
+}
+
+async function getOrderDeliveryLink(db, data) {
+  const order = await getOrderRowByNumber(db, cleanText(data.orderNumber));
+  if (!order) return {error:"Order not found"};
+  const members = order.customer_id
+    ? await db.select("rc_members", `?select=card_token&customer_id=eq.${encodeURIComponent(order.customer_id)}&limit=1`)
+    : [];
+  return {deliveryUrl:order.delivery_url || "", rollCallToken:members[0]?.card_token || ""};
+}
+
+async function saveOrderDeliveryLink(db, data) {
+  const order = await getOrderRowByNumber(db, cleanText(data.orderNumber));
+  if (!order) return {error:"Order not found"};
+  let url;
+  try { url = new URL(String(data.deliveryUrl || "")); }
+  catch { return {error:"Invalid delivery link"}; }
+  if (url.protocol !== "https:" || url.hostname !== "bali-scans.saujanalab.com" || url.pathname !== "/"
+      || url.searchParams.get("order") !== order.order_number) {
+    return {error:"Delivery link does not match this order"};
+  }
+  if (url.searchParams.get("link") !== (order.drive_link || "")
+      || url.searchParams.get("name") !== (order.delivery_display_name || order.customer_name)) {
+    return {error:"Delivery link details do not match the saved order"};
+  }
+  const members = order.customer_id
+    ? await db.select("rc_members", `?select=card_token&customer_id=eq.${encodeURIComponent(order.customer_id)}&limit=1`)
+    : [];
+  const linkedToken = new URLSearchParams(url.hash.slice(1)).get("rollCall") || "";
+  if (linkedToken !== (members[0]?.card_token || "")) {
+    return {error:"The Roll Call card link is out of date. Refresh this order and try again."};
+  }
+  const rows = await db.update("orders", `?id=eq.${encodeURIComponent(order.id)}`, {delivery_url:url.href});
+  if (!rows.length) return {error:"Could not save the delivery link"};
+  return {success:true,deliveryUrl:url.href};
 }
 
 async function requireContactSheetAdmin(env, data) {
@@ -1014,6 +1049,10 @@ async function routeAction(action, data, db, env) {
       return deleteCustomer(db, data);
     case "getOrders":
       return getOrders(db);
+    case "getOrderDeliveryLink":
+      return getOrderDeliveryLink(db, data);
+    case "saveOrderDeliveryLink":
+      return saveOrderDeliveryLink(db, data);
     case "getOrder":
     case "getOrderByNumber":
       return getOrderByNumber(db, data);
@@ -1072,6 +1111,9 @@ export default {
         ...queryData,
         ...(await readPayload(request))
       };
+      if (['getOrderDeliveryLink','saveOrderDeliveryLink'].includes(action) && request.method !== 'POST') {
+        return json({error:'Use POST.'},{status:405});
+      }
       if (action === 'verifyRollCallStaff') {
         if (request.method !== 'POST') return json({error:'Use POST.'},{status:405});
         await requireRollCallStaff(env,data,requireContactSheetAdmin);
@@ -1081,7 +1123,7 @@ export default {
         const result=await handleRollCall(action,data,db,env,(env,payload)=>requireRollCallStaff(env,payload,requireContactSheetAdmin),request.method);
         return json(result,{headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
       }
-      const staffActions=new Set(['getCustomers','getInitialData','getOrders','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
+      const staffActions=new Set(['getCustomers','getInitialData','getOrders','getOrderDeliveryLink','saveOrderDeliveryLink','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
       if(staffActions.has(action))await requireContactSheetAdmin(env,data);
       const result = await routeAction(action, data, db, env);
       return json(result,{headers:{'Cache-Control':'no-store'}});

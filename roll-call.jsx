@@ -284,7 +284,7 @@
     return <section className="rc-staff" aria-label={customerId?'Member access controls':'System access controls'}>
       <div className="rc-title"><h3>{customerId?'CUSTOMER ACCESS':'SYSTEM ACCESS'}</h3><span>{state?(enabled?'VISIBLE':'HIDDEN'):''}</span></div>
       {state&&<>
-        <p className="rc-muted">{customerId?'This member’s card and delivery-page access.':'Customer access to every Roll Call card.'} Stamps, rewards, history and links are preserved. Reward expiry dates stay unchanged.</p>
+        <p className="rc-muted">{customerId?'This member’s card and delivery-page access. Stamps, rewards, history and links are preserved. Reward expiry dates stay unchanged.':'Don’t worry about this part. Cheers! -Ed'}</p>
         {customerId&&!state.systemEnabled&&<p className="rc-notice">The whole system is hidden. Enabling this member will not override it.</p>}
         {!state.masterConfigured&&<p className="rc-notice">Master password setup is required before changing access.</p>}
         {!open?<button type="button" disabled={!state.masterConfigured} onClick={()=>{setOpen(true);setError('');}}>{enabled?'Disable customer access':'Re-enable customer access'}</button>:

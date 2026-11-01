@@ -22,6 +22,7 @@
   <script src="negative-collection.js?v=20261013-no-copy"></script>
   <script src="delivery-email.js?v=20261012-negatives"></script>
   <link rel="stylesheet" href="roll-call.css?v=20261025-voucher-dates"/>
+  <link rel="stylesheet" href="contact-sheet-studio.css?v=20261102-studio"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
@@ -266,7 +267,8 @@ input,textarea{
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" src="contact-sheet-generator.jsx"></script>
+<script type="text/babel" src="contact-sheet-studio.jsx?v=20261102-studio"></script>
+<script type="text/babel" src="contact-sheet-generator.jsx?v=20261102-studio"></script>
 <script type="text/babel" src="roll-call.jsx?v=20261025-voucher-dates"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
@@ -1361,6 +1363,7 @@ function LockScreen({onUnlock}) {
 );
 }
 function Dispatch({customers, orders=[], onOrderSaved, onOrderCollectionSaved, prefill, clearPrefill, resetSignal}) {
+  const studioPreview=new URLSearchParams(location.search).get('generator')!=='legacy';
   const [orderNo, setOrderNo]     = useState("");
   const [custInput, setCustInput] = useState("");
   const [selCust, setSelCust]     = useState(null);
@@ -1614,6 +1617,16 @@ function addRoll() {
       }
       return [...previous.filter(item => item.rollKey !== sheet.rollKey), sheet]
         .sort((a,b) => a.rollIndex-b.rollIndex);
+    });
+  }
+
+  function handleContactSheetInvalidated(index) {
+    setContactSheets(previous=>{
+      previous.filter(sheet=>sheet.rollIndex===index).forEach(sheet=>{
+        if(sheet.deliveryPreviewUrl)URL.revokeObjectURL(sheet.deliveryPreviewUrl);
+        if(sheet.storyPreviewUrl)URL.revokeObjectURL(sheet.storyPreviewUrl);
+      });
+      return previous.filter(sheet=>sheet.rollIndex!==index);
     });
   }
 
@@ -2512,9 +2525,11 @@ Saujana Film Lab Bali`;
       {/* Result */}
       <div className="dispatch-main">
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={css.card}>
+        <div className={studioPreview?'cs-studio-container':undefined} style={css.card}>
           <ContactSheetGenerator
             embedded
+            layoutPreview={studioPreview}
+            onSheetInvalidated={handleContactSheetInvalidated}
             orderNumber={cleanOrderNumber(orderNo)}
             customerName={contactSheetCustomerName}
             rolls={rolls}
@@ -2522,13 +2537,13 @@ Saujana Film Lab Bali`;
             onRollInclusionChange={handleRollInclusionChange}
             onSheetsChange={handleContactSheetReady}
           />
-          <div style={{marginTop:10,fontSize:9,color:skipContactSheets?"var(--gold-l)":contactSheets.length?"var(--greenT)":"var(--dim)",lineHeight:1.6}}>
+          {!studioPreview&&<div style={{marginTop:10,fontSize:9,color:skipContactSheets?"var(--gold-l)":contactSheets.length?"var(--greenT)":"var(--dim)",lineHeight:1.6}}>
             {skipContactSheets
               ? "Contact sheets are switched off for this delivery."
               : contactSheets.length
               ? `${contactSheets.length} contact sheet${contactSheets.length===1?"":"s"} prepared${excludedRolls.length?` · ${excludedRolls.length} roll${excludedRolls.length===1?"":"s"} skipped`:""}: ${contactSheets.map(sheet=>sheet.filmName).join(", ")}.`
               : "Optional. Orders with fewer than 10 usable frames can continue without a contact sheet."}
-          </div>
+          </div>}
         </div>
         <DeliveryThemePreview
           theme={previewTheme}

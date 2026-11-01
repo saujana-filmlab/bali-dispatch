@@ -264,7 +264,7 @@ async function csgFileToPreparedBlob(file) {
   }
 }
 
-function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null }) {
+function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null, layoutPreview=false, onSheetInvalidated=null }) {
   const availableRolls = React.useMemo(() => linkedRolls.map(value=>String(value||"").trim()).filter(Boolean), [linkedRolls]);
   const [selectedRoll,setSelectedRoll] = React.useState(0);
   const [frames,setFrames] = React.useState([]);
@@ -286,6 +286,40 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const storyRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const folderInputRef = React.useRef(null);
+  const [readyRolls,setReadyRolls] = React.useState({});
+  const demoLoaded=React.useRef(false);
+
+  React.useEffect(()=>{
+    if(!layoutPreview||demoLoaded.current||availableRolls.length!==3||new URLSearchParams(location.search).get('demo')!=='1'||!['localhost','127.0.0.1'].includes(location.hostname))return;
+    demoLoaded.current=true;let live=true;
+    (async()=>{
+      const blobs=[];
+      for(let i=1;i<=6;i++){
+        const response=await fetch(`studio-demo/${i}.jpg`);
+        if(!response.ok)throw Error('Demo images are unavailable');
+        blobs.push(await response.blob());
+      }
+      if(!live)return;
+      const workspaces={};
+      [36,24,12].forEach((count,index)=>{
+        workspaces[index]={frames:Array.from({length:count},(_,frame)=>({name:`demo-roll-${index+1}-${String(frame+1).padStart(2,'0')}.jpg`,blob:blobs[(frame+index*2)%blobs.length]})),scanStyle:['Classic','Isle Punch','Flat'][index],format:'full',numbered:true,confirmed:false,active:'delivery',progress:`${count} demo frames loaded`};
+      });
+      setRollWorkspaces(workspaces);setFrames(workspaces[0].frames);setProgress(workspaces[0].progress);
+    })().catch(err=>{if(live)setError(err.message)});
+    return()=>{live=false;};
+  },[layoutPreview,availableRolls.length]);
+
+  React.useEffect(()=>{
+    if(!layoutPreview)return;
+    const invalid=[];
+    for(const [index,saved] of Object.entries(readyRolls)){
+      const current=Number(index)===selectedRoll?{frames,scanStyle,format,numbered}:rollWorkspaces[index];
+      if(!current||saved.frames!==current.frames||saved.scanStyle!==current.scanStyle||saved.format!==current.format||saved.numbered!==current.numbered||saved.filmName!==availableRolls[index]||saved.customerName!==customerName)invalid.push(index);
+    }
+    if(!invalid.length)return;
+    setReadyRolls(previous=>{const next={...previous};invalid.forEach(index=>delete next[index]);return next;});
+    invalid.forEach(index=>onSheetInvalidated?.(Number(index)));
+  },[layoutPreview,readyRolls,frames,scanStyle,format,numbered,selectedRoll,rollWorkspaces,availableRolls,customerName]);
 
   React.useEffect(() => {
     if (linkedCustomerName) setCustomerName(linkedCustomerName);
@@ -312,21 +346,33 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
     setWorking(true); setError("");
     (async()=>{
       try {
-        await csgRender(deliveryRef.current,frames,"delivery",format,numbered,filmName,customerName,scanStyle);
-        if (!live) return;
-        await csgRender(storyRef.current,frames,"story",format,numbered,filmName,customerName,scanStyle);
+        if(layoutPreview){
+          // Commit complete sheets together so a cancelled roll render cannot paint over the next one.
+          const delivery=document.createElement('canvas'),story=document.createElement('canvas');
+          await csgRender(delivery,frames,"delivery",format,numbered,filmName,customerName,scanStyle);
+          if(!live)return;
+          await csgRender(story,frames,"story",format,numbered,filmName,customerName,scanStyle);
+          if(!live)return;
+          for(const [target,source] of [[deliveryRef.current,delivery],[storyRef.current,story]]){
+            target.width=source.width;target.height=source.height;target.getContext('2d').drawImage(source,0,0);
+          }
+        }else{
+          await csgRender(deliveryRef.current,frames,"delivery",format,numbered,filmName,customerName,scanStyle);
+          if (!live) return;
+          await csgRender(storyRef.current,frames,"story",format,numbered,filmName,customerName,scanStyle);
+        }
       } catch (err) { if (live) setError(err.message || "Could not render the contact sheets."); }
       finally { if (live) setWorking(false); }
     })();
     return ()=>{live=false;};
   },[frames,filmName,customerName,scanStyle,format,numbered]);
 
-  function chooseLinkedRoll(index) {
-    if (index === selectedRoll || working) return;
+  function chooseLinkedRoll(index,afterFinalize=false) {
+    if (index === selectedRoll || (working&&!afterFinalize)) return;
     const savedTarget = rollWorkspaces[index];
     setRollWorkspaces(previous => ({
       ...previous,
-      [selectedRoll]: {frames,scanStyle,format,numbered,confirmed,active,progress}
+      [selectedRoll]: {frames,scanStyle,format,numbered,confirmed,active,progress:afterFinalize?"Contact sheets finalized":progress}
     }));
     setSelectedRoll(index);
     setFilmName(availableRolls[index] || "");
@@ -407,12 +453,14 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   }
 
   async function preparePair() {
-    if (!frames.length || !confirmed) return;
-    setWorking(true); setProgress("Preparing both contact sheets");
+    if (!frames.length || !confirmed || working || (layoutPreview&&excludedRolls.includes(selectedRoll))) return;
+    let advanceIndex;
+    setWorking(true); setError(""); setProgress("Preparing both contact sheets");
     try {
       const deliveryBlob = await csgCanvasBlob(deliveryRef.current);
       const storyBlob = await csgCanvasBlob(storyRef.current);
       setProgress("Contact sheet ready for delivery");
+      if(layoutPreview)setReadyRolls(previous=>({...previous,[selectedRoll]:{frames,scanStyle,format,numbered,filmName,customerName}}));
       if (onSheetsChange) onSheetsChange({
         ready:true,
         rollIndex:selectedRoll,
@@ -428,11 +476,26 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
         deliveryPreviewUrl:URL.createObjectURL(deliveryBlob),
         storyPreviewUrl:URL.createObjectURL(storyBlob)
       });
+      if(layoutPreview){
+        const nextIndexes=availableRolls.map((_,index)=>index).filter(index=>index!==selectedRoll&&!excludedRolls.includes(index)&&!readyRolls[index]);
+        const nextIndex=nextIndexes.find(index=>index>selectedRoll)??nextIndexes[0];
+        if(nextIndex!==undefined)advanceIndex=nextIndex;
+        else setProgress("All done. You can publish and generate the link.");
+      }
     } catch(err) { setError(err.message || "Could not prepare the contact sheets."); }
     finally { setWorking(false); }
+    if(advanceIndex!==undefined)ReactDOM.unstable_batchedUpdates(()=>chooseLinkedRoll(advanceIndex,true));
   }
 
   const rollIncluded = !excludedRolls.includes(selectedRoll);
+
+  if(layoutPreview)return <ContactSheetStudio
+    rolls={availableRolls} selectedRoll={selectedRoll} workspaces={rollWorkspaces} frames={frames} readyRolls={readyRolls} excludedRolls={excludedRolls}
+    chooseRoll={chooseLinkedRoll} includeRoll={onRollInclusionChange} filmName={filmName} customerName={customerName} orderNumber={orderNumber}
+    scanStyle={scanStyle} setScanStyle={setScanStyle} format={format} setFormat={setFormat} numbered={numbered} setNumbered={setNumbered}
+    confirmed={confirmed} setConfirmed={setConfirmed} active={active} setActive={setActive} working={working} isPreparing={isPreparing}
+    prepareCount={prepareCount} progress={progress} error={error} dragging={dragging} setDragging={setDragging}
+    prepareFolderDrop={prepareFolderDrop} prepare={prepare} preparePair={preparePair} deliveryRef={deliveryRef} storyRef={storyRef} inputRef={inputRef} folderInputRef={folderInputRef}/>;
 
   return <div className={`csg-shell ${embedded?"embedded":""}`}>
     <style>{`

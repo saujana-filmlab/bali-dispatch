@@ -1119,7 +1119,7 @@ export default {
         await requireRollCallStaff(env,data,requireContactSheetAdmin);
         return json({success:true,rollCallSession:await createRollCallSession(env)},{headers:{'Cache-Control':'no-store'}});
       }
-      if (['getRollCall','rollCallCommand','getRollCallCard','getRollCallReport','getRollCallCustomers'].includes(action)) {
+      if (['getRollCall','rollCallCommand','getRollCallCard','getRollCallReport','getRollCallCustomers','getRollCallAccess','setRollCallAccess'].includes(action)) {
         const result=await handleRollCall(action,data,db,env,(env,payload)=>requireRollCallStaff(env,payload,requireContactSheetAdmin),request.method);
         return json(result,{headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
       }

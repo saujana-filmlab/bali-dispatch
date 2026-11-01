@@ -254,5 +254,49 @@
     useEffect(()=>{if(snapshot)callback.current(snapshot.member.cardToken);},[snapshot?.member.id,snapshot?.member.cardToken]);
     return null;
   }
-  window.SaujanaRollCall={CustomerPanel,OrderPanel,ReportPanel,cardLink,reportDay,redemptionText,dailyReportText,loadDailyReport,createProof,createDailyProof};
+  function AccessControls({api,customerId}){
+    const [state,setState]=useState(null),[memberId,setMemberId]=useState(null),[error,setError]=useState(''),[open,setOpen]=useState(false),[password,setPassword]=useState(''),[busy,setBusy]=useState(false);
+    const sequence=useRef(0);
+    async function refresh(){
+      const current=++sequence.current;setError('');
+      try{
+        let id=null;
+        if(customerId){const record=await api('getRollCall',{customerId});if(record?.error)throw Error(record.error);id=record.snapshot?.member.id;if(!id){if(current===sequence.current)setState(null);return;}}
+        const value=await api('getRollCallAccess',{memberId:id});if(value?.error)throw Error(value.error);
+        if(current===sequence.current){setMemberId(id);setState(value);}
+      }catch(error){if(current===sequence.current)setError(error.message);}
+    }
+    useEffect(()=>{setState(null);setOpen(false);setPassword('');refresh();return()=>{sequence.current++;};},[customerId]);
+    useEffect(()=>{if(!window.BroadcastChannel)return;const updates=new BroadcastChannel('roll-call-updates');updates.onmessage=()=>refresh();return()=>updates.close();},[customerId]);
+    const enabled=customerId?state?.memberEnabled:state?.systemEnabled;
+    async function confirm(event){
+      event.preventDefault();if(busy)return;
+      const current=sequence.current;setBusy(true);setError('');
+      const secret=password;setPassword('');
+      try{
+        const result=await api('setRollCallAccess',{memberId,enabled:!enabled,expectedVersion:customerId?state.memberVersion:state.systemVersion,requestId:crypto.randomUUID(),masterPassword:secret});
+        if(result?.error)throw Error(result.error);
+        if(current===sequence.current){setState({...result,masterConfigured:true});setOpen(false);}
+      }catch(error){if(current===sequence.current)setError(error.message);}
+      finally{if(current===sequence.current)setBusy(false);}
+    }
+    if(!state&&!error)return null;
+    return <section className="rc-staff" aria-label={customerId?'Member access controls':'System access controls'}>
+      <div className="rc-title"><h3>{customerId?'CUSTOMER ACCESS':'SYSTEM ACCESS'}</h3><span>{state?(enabled?'VISIBLE':'HIDDEN'):''}</span></div>
+      {state&&<>
+        <p className="rc-muted">{customerId?'This member’s card and delivery-page access.':'Customer access to every Roll Call card.'} Stamps, rewards, history and links are preserved. Reward expiry dates stay unchanged.</p>
+        {customerId&&!state.systemEnabled&&<p className="rc-notice">The whole system is hidden. Enabling this member will not override it.</p>}
+        {!state.masterConfigured&&<p className="rc-notice">Master password setup is required before changing access.</p>}
+        {!open?<button type="button" disabled={!state.masterConfigured} onClick={()=>{setOpen(true);setError('');}}>{enabled?'Disable customer access':'Re-enable customer access'}</button>:
+        <form className="rc-form" onSubmit={confirm}>
+          <p>{enabled?'Hide':'Restore'} {customerId?'this member’s':'ALL members’'} customer access?</p>
+          <label>Master PIN / password<input aria-label="Master PIN / password" type="password" autoComplete="off" maxLength="256" value={password} disabled={busy} onChange={event=>setPassword(event.target.value)} required/></label>
+          <div className="rc-actions"><button className="rc-primary" disabled={busy||!password}>{busy?'Saving...':enabled?'Confirm disable':'Confirm re-enable'}</button><button type="button" disabled={busy} onClick={()=>{setOpen(false);setPassword('');}}>Cancel</button></div>
+        </form>}
+      </>}
+      {error&&<p className="rc-error" role="alert">{error}</p>}
+      <button type="button" disabled={busy} onClick={refresh}>Refresh access status</button>
+    </section>;
+  }
+  window.SaujanaRollCall={CustomerPanel,OrderPanel,ReportPanel,AccessControls,cardLink,reportDay,redemptionText,dailyReportText,loadDailyReport,createProof,createDailyProof};
 }());

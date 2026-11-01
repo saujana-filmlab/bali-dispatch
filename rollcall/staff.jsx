@@ -70,6 +70,8 @@
           {!loading&&!error&&!result.customers.length&&<p className="phone-empty">No customers found.</p>}
           {result.total>100&&<nav className="phone-pagination" aria-label="Customer pages"><button disabled={offset===0||loading} onClick={()=>setOffset(Math.max(0,offset-100))}>Previous</button><span>{offset+1}–{Math.min(offset+100,result.total)}</span><button disabled={offset+100>=result.total||loading} onClick={()=>setOffset(offset+100)}>Next</button></nav>}
         </section>}
+        {selected&&<SaujanaRollCall.AccessControls key={'access:'+selected.id} customerId={selected.id} api={api}/>}
+        <details className="rc-disclosure"><summary>System controls</summary><SaujanaRollCall.AccessControls api={api}/></details>
         <footer className="phone-footer"><span>ROLL CALL OFFICE <span aria-hidden="true">/</span> BALI</span><button onClick={logout}>Sign out</button></footer>
       </main>}
     </>;

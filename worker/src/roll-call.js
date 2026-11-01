@@ -1,4 +1,5 @@
-const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||''));
+import {customerAccess,handleAccess} from './roll-call-access.js';
+const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value||''));
 const clean = value => String(value||'').trim();
 async function resolveId(db,table,legacyField,value) {
   const id=clean(value);if(!id) throw new Error('Select a Registry customer or saved order first.');
@@ -35,9 +36,12 @@ export async function handleRollCall(action,data,db,env,authorize,method) {
     if(!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Card not found.');
     const rows=await db.select('rc_members',`?select=id&card_token=eq.${encodeURIComponent(token)}&limit=1`);
     if(!rows[0]) throw new Error('Card not found.');
+    const access=await customerAccess(db,rows[0].id);
+    if(!access.systemEnabled||!access.memberEnabled)return {accessDisabled:true};
     return publicRollCall(await db.rpc('rc_snapshot',{p_member:rows[0].id}));
   }
   await authorize(env,data);
+  if(['getRollCallAccess','setRollCallAccess'].includes(action))return handleAccess(action,data,db,env);
   if(action==='getRollCallCustomers') {
     const offset=Number(data.offset||0);
     if(!Number.isInteger(offset)||offset<0||offset>1000000)throw new Error('Invalid customer page.');

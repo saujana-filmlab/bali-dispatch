@@ -1,6 +1,7 @@
 export async function rollCallBackupFile(db) {
   const backup=await db.rpc('rc_backup');
   if(backup?.format!=='saujana-bali-roll-call'||backup.schemaVersion!==1||Object.keys(backup.tables||{}).length!==8)throw Error('Roll Call backup is incomplete. Export stopped.');
+  if(!Array.isArray(backup.customerAccess?.settings)||!Array.isArray(backup.customerAccess?.events))throw Error('Roll Call access backup is incomplete.');
   return {
     label:'Roll Call backup',fileName:`saujana-bali-roll-call-${backup.exportedAt.slice(0,10)}.json`,mimeType:'application/json;charset=utf-8',
     rowCount:Object.values(backup.tables).reduce((total,rows)=>total+rows.length,0),content:JSON.stringify(backup,null,2)

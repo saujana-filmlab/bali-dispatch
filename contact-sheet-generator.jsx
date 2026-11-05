@@ -264,7 +264,7 @@ async function csgFileToPreparedBlob(file) {
   }
 }
 
-function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null, layoutPreview=false, onSheetInvalidated=null }) {
+function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null, layoutPreview=false, onSheetInvalidated=null,driveLink='',driveApi=null,readDriveFile=null }) {
   const availableRolls = React.useMemo(() => linkedRolls.map(value=>String(value||"").trim()).filter(Boolean), [linkedRolls]);
   const [selectedRoll,setSelectedRoll] = React.useState(0);
   const [frames,setFrames] = React.useState([]);
@@ -276,6 +276,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const [confirmed,setConfirmed] = React.useState(false);
   const [active,setActive] = React.useState("delivery");
   const [working,setWorking] = React.useState(false);
+  const [rendered,setRendered] = React.useState(false);
   const [isPreparing,setIsPreparing] = React.useState(false);
   const [prepareCount,setPrepareCount] = React.useState({current:0,total:0});
   const [progress,setProgress] = React.useState("");
@@ -288,6 +289,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const folderInputRef = React.useRef(null);
   const [readyRolls,setReadyRolls] = React.useState({});
   const demoLoaded=React.useRef(false);
+  const driveContext=React.useRef('');driveContext.current=JSON.stringify({orderNumber,customerName,rolls:availableRolls,excludedRolls,driveLink});
 
   React.useEffect(()=>{
     if(!layoutPreview||demoLoaded.current||availableRolls.length!==3||new URLSearchParams(location.search).get('demo')!=='1'||!['localhost','127.0.0.1'].includes(location.hostname))return;
@@ -343,10 +345,10 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   React.useEffect(() => {
     if (!frames.length) return;
     let live = true;
-    setWorking(true); setError("");
+    setWorking(true);setRendered(false); setError("");
     (async()=>{
       try {
-        if(layoutPreview){
+        {
           // Commit complete sheets together so a cancelled roll render cannot paint over the next one.
           const delivery=document.createElement('canvas'),story=document.createElement('canvas');
           await csgRender(delivery,frames,"delivery",format,numbered,filmName,customerName,scanStyle);
@@ -356,10 +358,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
           for(const [target,source] of [[deliveryRef.current,delivery],[storyRef.current,story]]){
             target.width=source.width;target.height=source.height;target.getContext('2d').drawImage(source,0,0);
           }
-        }else{
-          await csgRender(deliveryRef.current,frames,"delivery",format,numbered,filmName,customerName,scanStyle);
-          if (!live) return;
-          await csgRender(storyRef.current,frames,"story",format,numbered,filmName,customerName,scanStyle);
+          setRendered(true);
         }
       } catch (err) { if (live) setError(err.message || "Could not render the contact sheets."); }
       finally { if (live) setWorking(false); }
@@ -368,7 +367,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   },[frames,filmName,customerName,scanStyle,format,numbered]);
 
   function chooseLinkedRoll(index,afterFinalize=false) {
-    if (index === selectedRoll || (working&&!afterFinalize)) return;
+    if (index === selectedRoll || ((working||isPreparing||Boolean(frames.length&&!rendered))&&!afterFinalize)) return;
     const savedTarget = rollWorkspaces[index];
     setRollWorkspaces(previous => ({
       ...previous,
@@ -399,6 +398,34 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       await new Promise(resolve=>setTimeout(resolve,0));
     }
     return prepared;
+  }
+
+  async function importDriveGroups(groups,{signal,onProgress}){
+    if(!groups.length||new Set(groups.map(group=>group.rollIndex)).size!==groups.length||groups.some(group=>!Number.isInteger(group.rollIndex)||!availableRolls[group.rollIndex]||excludedRolls.includes(group.rollIndex)||!Array.isArray(group.files)||!group.files.length||group.files.length>200))throw Error('Check the Drive folder and film-roll mapping.');
+    const context=driveContext.current;
+    const current={frames,scanStyle,format,numbered,confirmed,active,progress};
+    const total=groups.reduce((sum,group)=>sum+group.files.length,0),updates={};let processed=0,commit;
+    setWorking(true);setIsPreparing(true);setPrepareCount({current:0,total});setError('');
+    try{
+      for(const [groupIndex,group] of groups.entries()){
+        if(signal.aborted)throw new DOMException('Import cancelled','AbortError');
+        const prepared=[];
+        for(const file of group.files){
+          setProgress(`${group.name} · Loading scan ${processed+1} of ${total}`);
+          onProgress?.({current:processed,total,phase:'downloading',roll:groupIndex+1,rolls:groups.length});
+          const blob=await readDriveFile(file,{signal});if(signal.aborted)throw new DOMException('Import cancelled','AbortError');
+          onProgress?.({current:processed,total,phase:'preparing',roll:groupIndex+1,rolls:groups.length});
+          const reduced=await csgFileToPreparedBlob(new File([blob],file.name,{type:file.mimeType}));prepared.push({name:file.name,blob:reduced});processed++;setPrepareCount({current:processed,total});
+          onProgress?.({current:processed,total,phase:'downloading',roll:groupIndex+1,rolls:groups.length});
+        }
+        const prior=group.rollIndex===selectedRoll?current:rollWorkspaces[group.rollIndex];
+        updates[group.rollIndex]={frames:prepared,scanStyle:prior?.scanStyle||'Classic',format:prior?.format||'full',numbered:prior?.numbered??true,confirmed:false,active:prior?.active||'delivery',progress:`${group.name} · ${prepared.length} scans loaded from Drive`};
+      }
+      if(signal.aborted)throw new DOMException('Import cancelled','AbortError');
+      if(context!==driveContext.current)throw Error('The order details changed. Load the Drive folder again.');
+      commit={firstIndex:groups[0].rollIndex,first:updates[groups[0].rollIndex]};
+    }finally{setWorking(false);setIsPreparing(false);}
+    if(commit){const {firstIndex,first}=commit;ReactDOM.unstable_batchedUpdates(()=>{setRollWorkspaces(previous=>({...previous,[selectedRoll]:current,...updates}));setSelectedRoll(firstIndex);setFilmName(availableRolls[firstIndex]);setFrames(first.frames);setScanStyle(first.scanStyle);setFormat(first.format);setNumbered(first.numbered);setConfirmed(false);setActive(first.active);setProgress(first.progress);});}
   }
 
   async function prepare(fileList, folderName="") {
@@ -453,7 +480,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   }
 
   async function preparePair() {
-    if (!frames.length || !confirmed || working || (layoutPreview&&excludedRolls.includes(selectedRoll))) return;
+    if (!frames.length || !confirmed || !rendered || working || isPreparing || (layoutPreview&&excludedRolls.includes(selectedRoll))) return;
     let advanceIndex;
     setWorking(true); setError(""); setProgress("Preparing both contact sheets");
     try {
@@ -488,12 +515,14 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   }
 
   const rollIncluded = !excludedRolls.includes(selectedRoll);
+  const loadedRolls=availableRolls.map((_,index)=>index).filter(index=>(index===selectedRoll?frames:rollWorkspaces[index]?.frames)?.length);
+  const driveControl=driveApi&&readDriveFile?<DriveScanImport folderUrl={driveLink} rolls={availableRolls} selectedRoll={selectedRoll} excludedRolls={excludedRolls} loadedRolls={loadedRolls} api={driveApi} onImport={importDriveGroups} disabled={working||isPreparing||Boolean(frames.length&&!rendered)}/>:null;
 
   if(layoutPreview)return <ContactSheetStudio
-    rolls={availableRolls} selectedRoll={selectedRoll} workspaces={rollWorkspaces} frames={frames} readyRolls={readyRolls} excludedRolls={excludedRolls}
+    rolls={availableRolls} selectedRoll={selectedRoll} workspaces={rollWorkspaces} frames={frames} readyRolls={readyRolls} excludedRolls={excludedRolls} driveControl={driveControl}
     chooseRoll={chooseLinkedRoll} includeRoll={onRollInclusionChange} filmName={filmName} customerName={customerName} orderNumber={orderNumber}
     scanStyle={scanStyle} setScanStyle={setScanStyle} format={format} setFormat={setFormat} numbered={numbered} setNumbered={setNumbered}
-    confirmed={confirmed} setConfirmed={setConfirmed} active={active} setActive={setActive} working={working} isPreparing={isPreparing}
+    confirmed={confirmed} setConfirmed={setConfirmed} active={active} setActive={setActive} working={working||isPreparing||Boolean(frames.length&&!rendered)} isPreparing={isPreparing}
     prepareCount={prepareCount} progress={progress} error={error} dragging={dragging} setDragging={setDragging}
     prepareFolderDrop={prepareFolderDrop} prepare={prepare} preparePair={preparePair} deliveryRef={deliveryRef} storyRef={storyRef} inputRef={inputRef} folderInputRef={folderInputRef}/>;
 
@@ -507,7 +536,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       .csg-shell.embedded{max-width:none}.csg-shell.embedded .csg-title{margin-bottom:14px}.csg-shell.embedded .csg-title h1{font-size:17px}.csg-shell.embedded .csg-layout{grid-template-columns:270px 1fr;gap:18px}.csg-shell.embedded .csg-panel{padding:18px}.csg-shell.embedded .csg-stage{height:500px}.csg-shell.embedded .csg-label{font-size:9px}.csg-shell.embedded .csg-choice{font-size:10px}.csg-shell.embedded .csg-check{font-size:11px}.csg-shell.embedded .csg-help,.csg-shell.embedded .csg-status,.csg-shell.embedded .csg-export small{font-size:10px}.csg-shell.embedded .csg-tabs button,.csg-shell.embedded .csg-tabs span{font-size:9px}
       @media(max-width:800px){.csg-layout,.csg-shell.embedded .csg-layout{grid-template-columns:1fr}.csg-stage{height:390px}.csg-title{align-items:flex-start;gap:12px}}
     `}</style>
-    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Your order details are ready${orderNumber ? ` · Order ${orderNumber}` : ""}. Add the scans and let Rollo handle the tiny frames.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div><span className="csg-local">Rollo is on contact-sheet duty</span></div>
+    <div className="csg-title"><div><h1>{embedded ? "Contact sheets for this order" : "Contact Sheet Generator"}</h1><p>{embedded ? `Your order details are ready${orderNumber ? ` · Order ${orderNumber}` : ""}. Add the scans and let Rollo handle the tiny frames.` : "Create the customer preview and Story share file directly inside Darkroom Dispatch."}</p></div>{driveControl}<span className="csg-local">Rollo is on contact-sheet duty</span></div>
     <div className="csg-layout">
       <aside className="csg-panel">
         {availableRolls.length > 1 && <><label className="csg-label">Film roll</label><select value={selectedRoll} disabled={working} onChange={e=>chooseLinkedRoll(Number(e.target.value))}>{availableRolls.map((roll,index)=><option key={`${roll}-${index}`} value={index}>{`Roll ${index+1} · ${roll}`}</option>)}</select></>}
@@ -533,7 +562,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
             <canvas ref={deliveryRef} className={active==="delivery"&&frames.length?"":"hidden"}/>
             <canvas ref={storyRef} className={active==="story"&&frames.length?"":"hidden"}/>
           </div>
-          <div className="csg-export"><small>Add the photos or folder for the delivery preview.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working} onClick={preparePair}>Prepare contact sheet</button></div>
+          <div className="csg-export"><small>Add the photos or folder for the delivery preview.</small><button disabled={!rollIncluded||!frames.length||!confirmed||working||!rendered} onClick={preparePair}>Prepare contact sheet</button></div>
         </div>
       </section>
     </div>

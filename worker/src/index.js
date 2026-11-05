@@ -1,6 +1,8 @@
 import {handleRollCall,protectRollCallCustomer} from './roll-call.js';
 import {rollCallBackupFile,readExportRows} from './roll-call-backup.js';
 import {createRollCallSession,requireRollCallStaff} from './roll-call-session.js';
+import {savedDelivery,handleDeliveryCorrection,deliveryRecipients} from './delivery-corrections.js';
+import {listDriveScans,getDriveScan} from './drive-import.js';
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -243,6 +245,7 @@ function orderFromRow(row) {
     notes: row.notes || "",
     collectNegatives: normalizeCollectNegatives(row.collect_negatives),
     driveLink: row.drive_link || "",
+    deliveryRevision: Number(row.delivery_revision)||0,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
   };
 }
@@ -368,7 +371,7 @@ async function getOrderByNumber(db, data) {
 
   const rows = await db.select(
     "orders",
-    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,created_at,contact_sheets(id,roll_index,film_name,frame_count,landscape_url,portrait_url,status)&order_number=eq.${encodeURIComponent(orderNumber)}&limit=1`
+    `?select=id,legacy_order_id,order_number,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,delivery_revision,created_at,contact_sheets(id,roll_index,film_name,frame_count,landscape_url,portrait_url,status)&order_number=eq.${encodeURIComponent(orderNumber)}&limit=1`
   );
   const row = rows[0];
   if (!row) return null;
@@ -380,8 +383,10 @@ async function getOrderByNumber(db, data) {
     : [];
   const hasPending = Array.isArray(row.contact_sheets)
     && row.contact_sheets.some(sheet => sheet.status && sheet.status !== "ready");
+  const publicOrder=orderFromRow(row);delete publicOrder.customerEmail;delete publicOrder.customerPhone;
   return {
-    ...orderFromRow(row),
+    ...publicOrder,
+    delivery:savedDelivery(row),
     contactSheets: sheets,
     contactSheetStatus: sheets.length ? "ready" : (hasPending ? "uploading" : "none")
   };
@@ -390,7 +395,7 @@ async function getOrderByNumber(db, data) {
 async function getOrderRowByNumber(db, orderNumber) {
   const rows = await db.select(
     "orders",
-    `?select=id,legacy_order_id,order_number,customer_id,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,film,notes,collect_negatives,drive_link,delivery_url,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
+    `?select=id,legacy_order_id,order_number,customer_id,legacy_customer_id,customer_name,customer_email,customer_phone,delivery_display_name,delivery_email_override,film,notes,collect_negatives,drive_link,delivery_url,delivery_revision,created_at&order_number=eq.${encodeURIComponent(orderNumber)}&order=created_at.desc&limit=1`
   );
   return rows[0] || null;
 }
@@ -401,7 +406,7 @@ async function getOrderDeliveryLink(db, data) {
   const members = order.customer_id
     ? await db.select("rc_members", `?select=card_token&customer_id=eq.${encodeURIComponent(order.customer_id)}&limit=1`)
     : [];
-  return {deliveryUrl:order.delivery_url || "", rollCallToken:members[0]?.card_token || ""};
+  return {deliveryUrl:order.delivery_url || "", rollCallToken:members[0]?.card_token || "",...await deliveryRecipients(db,order)};
 }
 
 async function saveOrderDeliveryLink(db, data) {
@@ -425,7 +430,7 @@ async function saveOrderDeliveryLink(db, data) {
   if (linkedToken !== (members[0]?.card_token || "")) {
     return {error:"The Roll Call card link is out of date. Refresh this order and try again."};
   }
-  const rows = await db.update("orders", `?id=eq.${encodeURIComponent(order.id)}`, {delivery_url:url.href});
+  const rows = await db.update("orders", `?id=eq.${encodeURIComponent(order.id)}&delivery_revision=eq.${Number(order.delivery_revision)||0}`, {delivery_url:url.href,delivery_revision:(Number(order.delivery_revision)||0)+1});
   if (!rows.length) return {error:"Could not save the delivery link"};
   return {success:true,deliveryUrl:url.href};
 }
@@ -488,7 +493,7 @@ async function beginContactSheetUpload(db, env, data) {
   if (!order) return {error: "Save the order before preparing contact sheets"};
 
   const deliveryId = crypto.randomUUID();
-  const uploadNonce = await createUploadNonce(env, {orderNumber, deliveryId});
+  const uploadNonce = await createUploadNonce(env, {orderNumber, deliveryId,revision:Number(order.delivery_revision)||0});
   const existing = await db.select(
     "contact_sheets",
     `?select=roll_index,film_name,frame_count,landscape_url,portrait_url,status&order_id=eq.${encodeURIComponent(order.id)}&order=roll_index.asc`
@@ -664,23 +669,7 @@ async function completeContactSheetUpload(db, env, data) {
   if (!order) return {error: "Order not found"};
 
   const sheets = sanitizeContactSheets(data.contactSheets || [], settings.url);
-  await db.delete("contact_sheets", `?order_id=eq.${encodeURIComponent(order.id)}`);
-  if (sheets.length) {
-    await db.insert("contact_sheets", sheets.map(sheet => ({
-      order_id: order.id,
-      roll_index: sheet.rollIndex,
-      film_name: sheet.filmName,
-      frame_count: sheet.frameCount,
-      landscape_url: sheet.deliveryUrl,
-      portrait_url: sheet.storyUrl,
-      status: "ready",
-      worker_job_id: session.deliveryId,
-      published_at: nowIso()
-    })), {returning: "minimal"});
-  }
-  await db.update("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
-    contact_sheets_enabled: sheets.length > 0
-  });
+  await db.rpc('dispatch_correct_delivery',{p_order:order.id,p_revision:Number(session.revision)||0,p_details:null,p_sheets:sheets,p_request:session.deliveryId});
   return {success: true, order: await getOrderByNumber(db, {orderNumber})};
 }
 
@@ -701,7 +690,7 @@ async function prepareContactSheetPublish(db, env, data) {
 
   const orderNumber = cleanText(data.orderNumberText || data.orderNumber);
   const deliveryId = crypto.randomUUID();
-  const uploadNonce = await createUploadNonce(env, {orderNumber, deliveryId});
+  const uploadNonce = await createUploadNonce(env, {orderNumber, deliveryId,revision:Number(saved.deliveryRevision)||0});
   const tickets = [];
   for (const request of requests) {
     const ticket = await requestContactSheetTicket(env, {
@@ -1029,6 +1018,9 @@ async function exportData(db, env, data) {
   ];
 
   files.push(await rollCallBackupFile(db));
+  const deliveryBackup=await db.rpc('dispatch_delivery_backup');
+  if(deliveryBackup?.format!=='saujana-delivery-corrections')throw Error('Delivery history backup is incomplete.');
+  files.push({label:'Delivery history',fileName:`saujana-delivery-history-${exportedAt.slice(0,10)}.json`,mimeType:'application/json;charset=utf-8',rowCount:deliveryBackup.edits.length,content:JSON.stringify(deliveryBackup,null,2)});
   return {success: true, exportedAt, files};
 }
 
@@ -1049,6 +1041,9 @@ async function routeAction(action, data, db, env) {
       return deleteCustomer(db, data);
     case "getOrders":
       return getOrders(db);
+    case "getDeliveryForEdit":
+    case "correctDelivery":
+      return handleDeliveryCorrection(action,data,db,env,{verifyUpload:verifyUploadNonce,settings:requireContactSheetSettings,sanitize:sanitizeContactSheets,mapSheet:contactSheetFromRow});
     case "getOrderDeliveryLink":
       return getOrderDeliveryLink(db, data);
     case "saveOrderDeliveryLink":
@@ -1111,7 +1106,13 @@ export default {
         ...queryData,
         ...(await readPayload(request))
       };
-      if (['getOrderDeliveryLink','saveOrderDeliveryLink'].includes(action) && request.method !== 'POST') {
+      if(['listDriveScans','getDriveScan'].includes(action)){
+        if(request.method!=='POST')return json({error:'Use POST.'},{status:405});
+        await requireContactSheetAdmin(env,data);
+        if(action==='getDriveScan')return await getDriveScan(env,data,CORS_HEADERS);
+        return json(await listDriveScans(env,data),{headers:{'Cache-Control':'private, no-store'}});
+      }
+      if (['getOrderDeliveryLink','saveOrderDeliveryLink','getDeliveryForEdit','correctDelivery'].includes(action) && request.method !== 'POST') {
         return json({error:'Use POST.'},{status:405});
       }
       if (action === 'verifyRollCallStaff') {
@@ -1123,7 +1124,7 @@ export default {
         const result=await handleRollCall(action,data,db,env,(env,payload)=>requireRollCallStaff(env,payload,requireContactSheetAdmin),request.method);
         return json(result,{headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
       }
-      const staffActions=new Set(['getCustomers','getInitialData','getOrders','getOrderDeliveryLink','saveOrderDeliveryLink','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
+      const staffActions=new Set(['getCustomers','getInitialData','getOrders','getOrderDeliveryLink','saveOrderDeliveryLink','getDeliveryForEdit','correctDelivery','updateCustomer','deleteCustomer','addOrder','getStock','saveStock','getStockHistory','recordStockHistory','finalizeStock']);
       if(staffActions.has(action))await requireContactSheetAdmin(env,data);
       const result = await routeAction(action, data, db, env);
       return json(result,{headers:{'Cache-Control':'no-store'}});

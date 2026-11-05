@@ -22,7 +22,9 @@
   <script src="negative-collection.js?v=20261013-no-copy"></script>
   <script src="delivery-email.js?v=20261012-negatives"></script>
   <link rel="stylesheet" href="roll-call.css?v=20261025-voucher-dates"/>
+  <link rel="stylesheet" href="delivery-editor.css?v=20261105-drive-edit"/>
   <link rel="stylesheet" href="contact-sheet-studio.css?v=20261102-scansauce-layout"/>
+  <link rel="stylesheet" href="drive-scan-import.css?v=20261105-flow"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
     :root{
@@ -267,9 +269,12 @@ input,textarea{
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" src="contact-sheet-studio.jsx?v=20261102-studio"></script>
-<script type="text/babel" src="contact-sheet-generator.jsx?v=20261102-studio"></script>
+<script type="text/babel" src="contact-sheet-studio.jsx?v=20261105-drive-edit"></script>
+<script type="text/babel" src="drive-scan-import.jsx?v=20261105-flow"></script>
+<script type="text/babel" src="contact-sheet-generator.jsx?v=20261105-drive-edit"></script>
 <script type="text/babel" src="roll-call.jsx?v=20261025-voucher-dates"></script>
+<script src="contact-sheet-label.js?v=20261105-drive-edit"></script>
+<script type="text/babel" src="delivery-editor.jsx?v=20261105-drive-edit"></script>
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
@@ -291,6 +296,9 @@ const API_TIMEOUTS = {
   getInitialData: 12000,
   getCustomers: 12000,
   getOrders: 12000,
+  getDeliveryForEdit: 12000,
+  listDriveScans: 60000,
+  correctDelivery: 45000,
   getOrderDeliveryLink: 12000,
   saveOrderDeliveryLink: 12000,
   getStock: 12000,
@@ -335,6 +343,9 @@ const API_RETRY_ACTIONS = new Set([
   "exportData"
 ]);
 const WORKER_ACTIONS = new Set([
+  "listDriveScans",
+  "getDeliveryForEdit",
+  "correctDelivery",
   "getRollCallReport",
   "getRollCall",
   "rollCallCommand",
@@ -371,6 +382,19 @@ const WORKER_ACTIONS = new Set([
 function apiEndpointForAction(action) {
   if (API_MODE === "supabase" && WORKER_ACTIONS.has(action)) return WORKER_API;
   return LEGACY_API;
+}
+
+async function readDriveScan(file,{signal}={}) {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000),abort=()=>controller.abort();
+  if(signal?.aborted)controller.abort();else signal?.addEventListener('abort',abort,{once:true});
+  try{
+    const url=new URL(WORKER_API);url.searchParams.set('action','getDriveScan');
+    const response=await fetch(url,{method:'POST',cache:'no-store',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({adminKey:getContactSheetAdminKey(),ticket:file.ticket}),signal:controller.signal});
+    const type=response.headers.get('Content-Type')||'';
+    if(!response.ok||type.includes('json')){const result=await response.json().catch(()=>({}));throw Error(result.error||'Could not load this scan from Drive.');}
+    if(!/^image\/(jpeg|tiff)/i.test(type))throw Error('Drive returned an unsupported scan format.');
+    const blob=await response.blob();if(blob.size!==file.size)throw Error('The scan download was incomplete. Please try again.');return blob;
+  }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
 
 function apiTimeoutFor(action) {
@@ -802,9 +826,10 @@ const deliveryUrl = o => {
   return `${BASE_URL}/?theme=bali&negative=${encodeURIComponent(deliveryTheme)}&date=${encodeURIComponent(deliveryDate)}&order=${encodeURIComponent(orderNum)}&name=${encodeURIComponent(name)}&film=${encodeURIComponent(film)}&link=${encodeURIComponent(link)}${sheetMode ? `&sheets=${sheetMode}` : ""}${collectionChoice ? `&collectNegatives=${collectionChoice}` : ""}`;
 };
 
-async function staffDeliveryUrl(order) {
+async function staffDeliveryUrl(order,onDetails) {
   const response = await apiCall("getOrderDeliveryLink", {orderNumber:order.orderNumber});
   if (!response || response.error) throw new Error(response?.error || "Could not load this delivery link");
+  onDetails?.(response);
   const url = new URL(response.deliveryUrl || deliveryUrl(order));
   const fragment = new URLSearchParams(url.hash.slice(1));
   if (response.rollCallToken) fragment.set("rollCall", response.rollCallToken);
@@ -1318,7 +1343,7 @@ function LockScreen({onUnlock}) {
         </div>
         <div style={{fontSize:8,letterSpacing:"0.08em",fontWeight:800,color:"var(--gold-l)",
                      border:"1px solid var(--gold)",padding:"6px 8px",whiteSpace:"nowrap"}}>
-          V2 ENGINE
+          V2.X ENGINE
         </div>
       </div>
 
@@ -1333,7 +1358,7 @@ function LockScreen({onUnlock}) {
         Staff Access
       </div>
       <div style={{fontSize:11,color:"var(--muted)",lineHeight:1.6,marginBottom:18}}>
-        <span>SAUJANA ENGINE V2: </span><span style={{color:"var(--greenT)",fontWeight:800}}>ONLINE</span>
+        <span>SAUJANA ENGINE V2.X: </span><span style={{color:"var(--greenT)",fontWeight:800}}>ONLINE</span>
       </div>
 
       <input
@@ -1377,17 +1402,19 @@ function LockScreen({onUnlock}) {
   </div>
 );
 }
-function Dispatch({customers, orders=[], onOrderSaved, onOrderCollectionSaved, prefill, clearPrefill, resetSignal}) {
+function Dispatch({customers, orders=[], onOrderSaved, onOrderCollectionSaved, onDeliverySaved, prefill, clearPrefill, resetSignal}) {
   const studioPreview=new URLSearchParams(location.search).get('generator')!=='legacy';
-  const [orderNo, setOrderNo]     = useState("");
-  const [custInput, setCustInput] = useState("");
+  const studioDemo=studioPreview&&new URLSearchParams(location.search).get('demo')==='1'&&['localhost','127.0.0.1'].includes(location.hostname);
+  const [editingOrder,setEditingOrder]=useState(()=>new URLSearchParams(window.location.search).get('editOrder')||null);
+  const [orderNo, setOrderNo]     = useState(studioDemo?"STUDIO-DEMO-01":"");
+  const [custInput, setCustInput] = useState(studioDemo?"Sample Customer 01":"");
   const [selCust, setSelCust]     = useState(null);
-  const [custEmail, setCustEmail] = useState("");
+  const [custEmail, setCustEmail] = useState(studioDemo?"sample01@example.test":"");
   const [extraEmails, setExtraEmails] = useState([]);
   const [custPhone, setCustPhone] = useState("");
   const [deliveryName, setDeliveryName] = useState("");
   const [showDeliveryName, setShowDeliveryName] = useState(false);
-  const [rolls, setRolls]         = useState([""]);
+  const [rolls, setRolls]         = useState(studioDemo?["Fuji 400","Kodak Gold 200","Ilford HP5 Plus"]:[""]);
   const [deliveryRollDetails, setDeliveryRollDetails] = useState("");
   const [deliveryTheme, setDeliveryTheme] = useState("colour");
   const [collectNegatives, setCollectNegatives] = useState(null);
@@ -2042,9 +2069,11 @@ Saujana Film Lab Bali`;
 
  async function loadPastOrder(o) {
     setResult(null);
-    let savedLink;
-    try { savedLink = await staffDeliveryUrl(o); }
+    let savedLink,deliveryRecipients;
+    try { savedLink = await staffDeliveryUrl(o,details=>{deliveryRecipients=details;}); }
     catch(error) { showToast(error.message || "Could not load the delivery link"); return; }
+    const savedParams=new URL(savedLink).searchParams;
+    const savedName=savedParams.get('name')||o.deliveryName||o.customerName||'Customer';
     collectionSaveRef.current += 1;
     setSavingCollection(false);
     // 1. Find the customer or default to empty
@@ -2054,19 +2083,19 @@ Saujana Film Lab Bali`;
     // We use (val || "") to ensure React always gets a string, never undefined
     setOrderNo(String(o.orderNumber || ""));
     setCustInput(customer ? (customer.name || "") : (o.customerName || ""));
-    setDeliveryName(o.customerName || "");
-    setShowDeliveryName(!!(customer && o.customerName && o.customerName !== customer.name));
-    setCustEmail(customer ? (customer.email || "") : "");
-    setExtraEmails([]);
+    setDeliveryName(savedName);
+    setShowDeliveryName(!!(customer && savedName !== customer.name));
+    setCustEmail(Object.hasOwn(deliveryRecipients||{},'email')?deliveryRecipients.email:(o.customerEmail||customer?.email||''));
+    setExtraEmails(deliveryRecipients?.extraEmails||[]);
     setCustPhone(customer ? (customer.phone || "") : "");
     setSelCust(customer);
     
     // Split film string safely
     const rollsArray = (o.film && typeof o.film === 'string') ? o.film.split(" · ") : [""];
     setRolls(rollsArray);
-    const pastDeliveryFilm = compactRollDetails(rollsArray);
-    setDeliveryRollDetails("");
-    setDeliveryTheme(normalizeDeliveryTheme(new URL(savedLink).searchParams.get('negative')||o.deliveryTheme));
+    const pastDeliveryFilm = savedParams.get('film')||compactRollDetails(rollsArray);
+    setDeliveryRollDetails(pastDeliveryFilm);
+    setDeliveryTheme(normalizeDeliveryTheme(savedParams.get('negative')||o.deliveryTheme));
     setCollectNegatives(SaujanaNegativeCollection.normalize(o.collectNegatives));
     contactSheets.forEach(sheet=>{
       if (sheet.deliveryPreviewUrl) URL.revokeObjectURL(sheet.deliveryPreviewUrl);
@@ -2080,8 +2109,8 @@ Saujana Film Lab Bali`;
     setNotes(o.notes || "");
     
     // 3. Update result UI
-    const pastDeliveryTheme = normalizeDeliveryTheme(new URL(savedLink).searchParams.get('negative')||o.deliveryTheme);
-    const pastDeliveryDate = String(o.deliveryDate || baliDeliveryDate());
+    const pastDeliveryTheme = normalizeDeliveryTheme(savedParams.get('negative')||o.deliveryTheme);
+    const pastDeliveryDate = String(savedParams.get('date')||o.deliveryDate || baliDeliveryDate());
     const longUrl = savedLink;
     setResult({
         id:o.id,
@@ -2089,7 +2118,7 @@ Saujana Film Lab Bali`;
         url: longUrl,
         shortUrl: longUrl, 
         previewUrl: longUrl,
-        custName: o.customerName || "Customer", 
+        custName: savedName,
         orderNumber: o.orderNumber || "",
         film: pastDeliveryFilm,
         notes: o.notes || "",
@@ -2107,6 +2136,7 @@ Saujana Film Lab Bali`;
   return (
     <div className="dispatch-workspace">
       <Toast msg={toast}/>
+      {editingOrder&&<SaujanaDeliveryEditor orderNumber={editingOrder} api={apiCall} upload={uploadContactSheetVariant} readDriveFile={readDriveScan} Preview={DeliveryThemePreview} themes={DELIVERY_THEME_OPTIONS} onClose={()=>setEditingOrder(null)} onSaved={()=>{setEditingOrder(null);setResult(null);onDeliverySaved?.();showToast('Delivery corrected. The existing order was updated.');}}/>}
 
       {/* Form */}
       <div className="dispatch-sidebar">
@@ -2541,6 +2571,9 @@ Saujana Film Lab Bali`;
             embedded
             layoutPreview={studioPreview}
             onSheetInvalidated={handleContactSheetInvalidated}
+            driveLink={driveLink}
+            driveApi={apiCall}
+            readDriveFile={readDriveScan}
             orderNumber={cleanOrderNumber(orderNo)}
             customerName={contactSheetCustomerName}
             rolls={rolls}
@@ -2583,6 +2616,7 @@ Saujana Film Lab Bali`;
             </div>
             <div style={css.card}>
               <span style={css.secLabel}>Delivery Page Link</span>
+              <button type="button" onClick={()=>setEditingOrder(result.orderNumber)} style={{...css.btn('ghost'),marginBottom:12}}>Fix Delivery</button>
               <div className="negative-collection-status" style={{fontSize:12,lineHeight:1.6,color:"var(--light)",marginBottom:12}}>
                 Negatives collection: <strong style={{color:"var(--white)"}}>{SaujanaNegativeCollection.normalize(result.collectNegatives) === "yes" ? "Yes" : SaujanaNegativeCollection.normalize(result.collectNegatives) === "no" ? "No" : "N/A"}</strong>
               </div>
@@ -2684,6 +2718,7 @@ Saujana Film Lab Bali`;
                     style={{...css.btn(),padding:"7px 10px",fontSize:9,whiteSpace:"nowrap"}}>
                     Load
                   </button>
+                  <button type="button" onClick={()=>setEditingOrder(o.orderNumber)} style={{...css.btn('ghost'),padding:'7px 10px',fontSize:9,whiteSpace:'nowrap'}}>Fix Delivery</button>
                   <button type="button" onClick={()=>openStaffDelivery(o,showToast)}
                     style={{...css.btn("ghost"),padding:"7px 10px",fontSize:9,whiteSpace:"nowrap",
                       color:"var(--blue-l)",textDecoration:"none"}}>
@@ -3276,7 +3311,7 @@ function App() {
             Connecting to {API_MODE === "supabase" ? "Dispatch Worker..." : "Google Sheets..."}
           </div>
         ) : tab==="dispatch" ? (
-          <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved} onOrderCollectionSaved={handleOrderCollectionSaved}
+          <Dispatch customers={customers} orders={orders} onOrderSaved={handleOrderSaved} onOrderCollectionSaved={handleOrderCollectionSaved} onDeliverySaved={load}
             prefill={prefill} clearPrefill={()=>setPrefill(null)} resetSignal={newOrderSignal}/>
         ) : tab==="registry" ? (
   <Registry customers={customers} orders={orders}

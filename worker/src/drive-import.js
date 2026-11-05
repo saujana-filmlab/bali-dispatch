@@ -7,6 +7,11 @@ const encode=value=>new TextEncoder().encode(value);
 const b64=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const unb64=value=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),char=>char.charCodeAt(0));
 let cachedToken=null;
+async function googleFetch(url,init={}){
+ const response=await fetch(url,{...init,redirect:'manual'});
+ if(response.status>=300&&response.status<400)throw Error('Google returned an unexpected redirect. Please try again.');
+ return response;
+}
 function settings(env){
  let credentials;try{credentials=JSON.parse(env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON||'{}');}catch{throw Error('The Drive connection needs administrator setup.');}
  const root=String(env.GOOGLE_DRIVE_ROOT_FOLDER_ID||'');
@@ -20,13 +25,13 @@ async function accessToken(config,refresh=false){
  const pem=config.credentials.private_key.replace(/-----[^-]+-----|\s/g,'');
  const key=await crypto.subtle.importKey('pkcs8',Uint8Array.from(atob(pem),char=>char.charCodeAt(0)),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
  const signature=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,encode(header+'.'+body));
- const response=await fetch(TOKEN_URL,{method:'POST',redirect:'error',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:header+'.'+body+'.'+b64(new Uint8Array(signature))})});
+ const response=await googleFetch(TOKEN_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:header+'.'+body+'.'+b64(new Uint8Array(signature))})});
  const result=await response.json();if(!response.ok||!result.access_token)throw Error('Could not connect to Drive. Check the lab Drive connection.');
  cachedToken={identity,value:result.access_token,expires:Date.now()+Number(result.expires_in||3600)*1000};return result.access_token;
 }
 async function drive(config,url){
- let response=await fetch(url,{headers:{Authorization:'Bearer '+await accessToken(config)},redirect:'error'});
- if(response.status===401)response=await fetch(url,{headers:{Authorization:'Bearer '+await accessToken(config,true)},redirect:'error'});
+ let response=await googleFetch(url,{headers:{Authorization:'Bearer '+await accessToken(config)}});
+ if(response.status===401)response=await googleFetch(url,{headers:{Authorization:'Bearer '+await accessToken(config,true)}});
  if(!response.ok){const error=Error(response.status===404||response.status===403?'This folder or file is not available to the lab Drive connection.':response.status===429?'Drive is busy. Please try again shortly.':'Could not read from Drive. Please try again.');error.status=response.status;throw error;}
  return response;
 }

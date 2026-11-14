@@ -61,10 +61,10 @@
       const payload={memberId:snapshot?.member.id,...input};
       if(operation==='reverse')payload.expectedUsedAt=snapshot.rewards.find(item=>item.id===input.rewardId)?.usedAt||null;
       const signature=JSON.stringify({operation,payload});
-      if(pending.current?.signature!==signature)pending.current={signature,id:crypto.randomUUID()};
       try {
+        if(pending.current?.signature!==signature)pending.current={signature,id:crypto.randomUUID()};
         const result=await api('rollCallCommand',{operation,requestId:pending.current.id,input:payload});
-        if(result?.error){pending.current=null;throw Error(result.error);}
+        if(result?.error)throw Error(result.error);
         pending.current=null;state.setRecord({snapshot:result.snapshot,attached:false});
         setNotice(message);setQuantity(1);setRemoveQuantity(1);setOpen(false);
         if(window.BroadcastChannel){const updates=new BroadcastChannel('roll-call-updates');updates.postMessage({memberNumber:result.snapshot.member.number});updates.close();}
@@ -78,7 +78,10 @@
       command('add_stamps',{quantity:count,expectedVersion:snapshot.member.version},`${count} ${count===1?'stamp':'stamps'} added.`);
     }
     function savePaper() {
-      command(snapshot?'opening':'enroll',{customerId:customer.id,expectedVersion:snapshot?.member.version,...paper},snapshot?'Paper progress corrected.':'Roll Call enabled.');
+      const completedCards=Number(paper.completedCards),currentStamps=Number(paper.currentStamps),unusedRewards=Number(paper.unusedRewards);
+      const total=completedCards*10+currentStamps;
+      if(![completedCards,currentStamps,unusedRewards].every(n=>Number.isInteger(n)&&n>=0)||currentStamps>9||total>10000||unusedRewards>Math.floor(total/5))return state.setError('Check the completed cards, current stamps, and unused rewards.');
+      command('opening',{expectedVersion:snapshot.member.version,completedCards,currentStamps,unusedRewards},'Paper card transferred.');
     }
     function removeStamps() {
       const count=Number(removeQuantity);
@@ -120,6 +123,11 @@
         {ready.length?ready.map(item=>rewardRow(item)):<p className="rc-muted">Next reward at stamp 5 or 10.</p>}
         {!!used.length&&<details className="rc-disclosure"><summary>Used &amp; expired rewards <span>{used.length}</span></summary>{used.map(item=>rewardRow(item))}</details>}
         <details className="rc-disclosure rc-manage"><summary>Manage card</summary>
+          {!open?<button type="button" disabled={busy} onClick={()=>{
+            const stamps=snapshot.member.openingStamps||0;
+            setPaper({completedCards:Math.floor(stamps/10),currentStamps:stamps%10,unusedRewards:rewards.filter(item=>item.displayStatus==='verify').length});
+            setOpen(true);
+          }}>Transfer paper card</button>:<div className="rc-form"><Opening value={paper} onChange={setPaper}/><div className="rc-actions"><button type="button" className="rc-primary" disabled={busy} onClick={savePaper}>Save paper progress</button><button type="button" disabled={busy} onClick={()=>setOpen(false)}>Cancel</button></div></div>}
           <label htmlFor="rc-remove-count">Stamps to remove</label>
           <div className="rc-remove-controls"><input id="rc-remove-count" type="number" min="1" max={Math.min(200,snapshot.totalStamps)} value={removeQuantity} onChange={event=>setRemoveQuantity(event.target.value)} disabled={busy||!snapshot.totalStamps}/><button disabled={busy||!snapshot.totalStamps} onClick={removeStamps}>Remove stamps</button></div>
           <div className="rc-rewards-heading">VOUCHER STATUS</div>
@@ -129,8 +137,7 @@
           <ul className="rc-audit">{snapshot.audit.map(event=><li key={event.id}><strong>{event.action==='add_stamps'?`+${event.after?.input?.quantity||''} stamps`:event.action==='remove_stamps'?`-${event.after?.input?.quantity||''} stamps`:event.action==='redeem'?'Reward marked used':event.action==='undo_stamps'?'Stamps removed':event.action==='reverse'?'Reward restored':event.action==='set_reward_date'?'Voucher date confirmed':event.action}</strong><br/><time>{when(event.createdAt)}</time>{event.action==='set_reward_date'&&<p>Stamp date: {voucherDate(event.after?.earnedAt)}<br/>Valid until: {voucherDate(event.after?.expiresAt)}</p>}{event.reason&&<p>{event.reason}</p>}</li>)}</ul>
         </details>
       </>}
-      {!snapshot&&!state.loading&&!state.error&&<button className="rc-primary" disabled={busy} onClick={()=>setOpen(!open)}>Enable Roll Call</button>}
-      {open&&<div className="rc-form"><Opening value={paper} onChange={setPaper}/><div className="rc-actions"><button className="rc-primary" disabled={busy} onClick={savePaper}>{busy?'Saving…':'Enable membership'}</button><button disabled={busy} onClick={()=>setOpen(false)}>Cancel</button></div></div>}
+      {!snapshot&&!state.loading&&(!state.error||pending.current)&&<button type="button" className="rc-primary" disabled={busy} onClick={()=>command('enroll',{customerId:customer.id},'Roll Call enabled.')}>{busy?'Enabling...':'Enable Roll Call'}</button>}
     </section>;
   }
 

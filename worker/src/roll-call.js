@@ -1,5 +1,5 @@
 import {customerAccess,handleAccess} from './roll-call-access.js';
-const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value||''));
+const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||''));
 const clean = value => String(value||'').trim();
 async function resolveId(db,table,legacyField,value) {
   const id=clean(value);if(!id) throw new Error('Select a Registry customer or saved order first.');
@@ -65,8 +65,8 @@ export async function handleRollCall(action,data,db,env,authorize,method) {
   }
   if(action!=='rollCallCommand') throw new Error('Unknown Roll Call action.');
   const operation=clean(data.operation),actor='Dispatch staff';
-  if(!uuid(data.requestId)) throw new Error('A request ID is required.');
-  if(!['enroll','redeem','reverse','add_stamps','remove_stamps','set_reward_date'].includes(operation)) throw new Error('Unknown Roll Call operation.');
+  if(!uuid(data.requestId)) throw new Error('Could not verify this Roll Call update. Reload Dispatch and try again.');
+  if(!['enroll','opening','redeem','reverse','add_stamps','remove_stamps','set_reward_date'].includes(operation)) throw new Error('Unknown Roll Call operation.');
   const input={...data.input};
   if(operation==='enroll') {
     input.customerId=await resolveId(db,'customers','legacy_customer_id',input.customerId);
@@ -81,5 +81,14 @@ export async function handleRollCall(action,data,db,env,authorize,method) {
   }
   if(input.orderId) input.orderId=await resolveId(db,'orders','legacy_order_id',input.orderId);
   if(JSON.stringify(input).length>8000) throw new Error('Roll Call request is too large.');
+  if(operation==='opening') {
+    const existing=await db.rpc('rc_snapshot',{p_member:input.memberId});
+    const opening=Number(input.completedCards)*10+Number(input.currentStamps);
+    // The legacy transfer routine resets dates for rewards inside the paper balance.
+    if(existing?.member.version===input.expectedVersion && existing.rewards.some(reward=>
+      reward.earnedAt && reward.status!=='redeemed' &&
+      (reward.cardNumber-1)*10+reward.atStamp<=opening
+    )) throw Error('This transfer would change an existing voucher date. Existing rewards were not changed.');
+  }
   return {snapshot:await db.rpc('roll_call_apply',{p_action:operation,p_payload:input,p_staff:actor,p_request:data.requestId})};
 }

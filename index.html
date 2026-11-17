@@ -380,7 +380,7 @@ const WORKER_ACTIONS = new Set([
 ]);
 
 function apiEndpointForAction(action) {
-  if (API_MODE === "supabase" && WORKER_ACTIONS.has(action)) return WORKER_API;
+  if (action === "createFolder" || (API_MODE === "supabase" && WORKER_ACTIONS.has(action))) return WORKER_API;
   return LEGACY_API;
 }
 

@@ -3,6 +3,7 @@ import {rollCallBackupFile,readExportRows} from './roll-call-backup.js';
 import {createRollCallSession,requireRollCallStaff} from './roll-call-session.js';
 import {savedDelivery,handleDeliveryCorrection,deliveryRecipients} from './delivery-corrections.js';
 import {listDriveScans,getDriveScan} from './drive-import.js';
+import {labDriveFolder} from './drive-folder.js';
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -1102,10 +1103,20 @@ export default {
       const binaryResult = await routeBinaryAction(action, queryData, db, env, request);
       if (binaryResult) return json(binaryResult);
 
+      const bodyData = await readPayload(request);
       const data = {
         ...queryData,
-        ...(await readPayload(request))
+        ...bodyData
       };
+      if (['createFolder','checkLabDriveFolder'].includes(action)) {
+        if (request.method !== 'POST') return json({error:'Use POST.'},{status:405});
+        await requireContactSheetAdmin(env,bodyData || {});
+        const check = action === 'checkLabDriveFolder';
+        if (!check && await getOrderRowByNumber(db,cleanText(bodyData?.orderNumber).toUpperCase())) {
+          return json({error:DUPLICATE_ORDER_TITLE,detail:DUPLICATE_ORDER_MESSAGE},{status:409});
+        }
+        return json(await labDriveFolder(env,bodyData || {},check),{headers:{'Cache-Control':'private, no-store'}});
+      }
       if(['listDriveScans','getDriveScan'].includes(action)){
         if(request.method!=='POST')return json({error:'Use POST.'},{status:405});
         await requireContactSheetAdmin(env,data);

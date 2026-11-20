@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-upload-recovery-20261120">
+<head><meta name="dispatch-release" content="workshop-v3-folder-polish-20261120">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -266,7 +266,7 @@ input,textarea{
       .registry-detail>div{height:auto!important}
     }
   </style>
-<link rel="stylesheet" href="/refresh/refresh.css"><script src="/refresh/lucide.js"></script></head>
+<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-folder-polish-20261120"><script src="/refresh/lucide.js"></script></head>
 <body>
 <div id="root"></div>
 <script type="text/babel" src="contact-sheet-studio.jsx?v=20261105-drive-edit"></script>
@@ -1351,6 +1351,7 @@ function Dispatch({orderStatus,workshopDaylight=false,driveTransfers,workshopDri
   const trial=workshopDrive;
   useEffect(()=>{if(realDriveTrial&&workshopLink)setDriveLink(workshopLink);},[workshopLink,realDriveTrial]);
   const [editingDrive,setEditingDrive]=useState(false);
+  const [createdFolderLink,setCreatedFolderLink]=useState("");
   const [driveDraft,setDriveDraft]=useState("");
   const [driveLinkError,setDriveLinkError]=useState("");
   const clipboardEpoch=useRef(0);
@@ -1359,6 +1360,7 @@ function Dispatch({orderStatus,workshopDaylight=false,driveTransfers,workshopDri
   const [refreshWorkspace,setRefreshWorkspace]=useState([]);
   const [workspaceGeneration,setWorkspaceGeneration]=useState(0);
   const draftEpoch=useRef(0);
+  useEffect(()=>{setCreatingFolder(false);setCreatedFolderLink("");},[workspaceGeneration]);
   useEffect(()=>()=>{draftEpoch.current++;clipboardEpoch.current++;},[]);
   const lastTrialGeneration=useRef(trial.folderGeneration);
   function clearWorkspace(){
@@ -1683,23 +1685,28 @@ function addRoll() {
       showToast(DUPLICATE_ORDER_TITLE);
       return;
     }
+    const folderEpoch=draftEpoch.current;
     const epoch=draftEpoch.current;
     setCreatingFolder(true);
+    try {
     const registryName = selCust ? selCust.name : (custInput.trim() || "");
     const name = (showDeliveryName ? deliveryName.trim() : "") || registryName;
     const res = await apiCall("createFolder", {
       orderNumber: cleanOrderNumber(orderNo),
       customerName: name,
     });
+    if(folderEpoch!==draftEpoch.current)return;
     if(epoch!==draftEpoch.current)return;
     if (res && res.folderUrl) {
+      setCreatedFolderLink(res.folderUrl);
       setDriveLink(res.folderUrl);setIntakeMode("upload");
       showToast(`Folder ready: ${res.folderName} ✓`);
 
     } else {
       showToast(res?.error || "Could not create folder");
     }
-    setCreatingFolder(false);
+    } catch(error){if(folderEpoch===draftEpoch.current)showToast(error.message||"Could not create folder");}
+    finally{if(folderEpoch===draftEpoch.current)setCreatingFolder(false);}
   }
 
   const publishAttempt=useRef(null);
@@ -1778,16 +1785,20 @@ function addRoll() {
           for(const [index,sheet] of sheets.entries()){
             const next={rollIndex:sheet.rollIndex,filmName:sheet.filmName,frameCount:sheet.frameCount,
               scanStyle:normalizeScanStyle(sheet.scanStyle),format:normalizeFrameFormat(sheet.format)};
-            for(const [variant,field,label] of [["delivery","deliveryUrl","Landscape"],["story","storyUrl","Portrait"]]){
+            const variants=[["delivery","deliveryUrl"],["story","storyUrl"]];
+            if(variants.some(([variant])=>!attempt.variants.has(sheet.rollIndex+":"+variant)))stage("Uploading contact sheets / Roll "+(index+1)+" of "+sheets.length);
+            const uploads=await Promise.allSettled(variants.map(async ([variant,field])=>{
               const key=sheet.rollIndex+":"+variant;
               if(!attempt.variants.has(key)){
-                stage("Uploading roll "+(index+1)+" of "+sheets.length+" / "+label);
                 const url=await uploadContactSheetVariant({orderNumber,uploadNonce:attempt.nonce,sheet,variant});
                 if(!current())return;
                 attempt.variants.set(key,url);
               }
               next[field]=attempt.variants.get(key);
-            }
+            }));
+            if(!current())return;
+            const failed=uploads.find(upload=>upload.status==="rejected");
+            if(failed)throw failed.reason;
             manifest.push(next);
           }
           attempt.manifest=manifest;attempt.commitStarted=true;
@@ -2381,10 +2392,13 @@ Saujana Film Lab Bali`;
               {driveLink&&!editingDrive&&!result&&!loadedPastOrder&&<button type="button" className="sl-secondary" disabled={trial.busy||generating} onClick={()=>editDriveLink(driveLink)}>Change link</button>}
               {!result&&!loadedPastOrder&&!editingDrive&&<>
                 {realDriveTrial&&driveFolderId&&!trial.batch&&trial.connection&&<button type="button" className="sl-secondary" disabled={trial.busy||generating} onClick={async()=>{if(await trial.attach(driveFolderId,driveLink))setIntakeMode("drive-trial");}}>Use for uploads</button>}
-                {!driveLink&&<button type="button" className="sl-secondary" disabled={trial.busy} onClick={pasteDriveLink}>Paste Drive link</button>}
-                {(!driveLink||realDriveTrial)&&<button type="button" className="sl-secondary" onClick={async()=>{if(!realDriveTrial)return createFolder();if(await trial.create(Boolean(driveLink)))setIntakeMode("drive-trial");}} disabled={generating||(realDriveTrial?(trial.busy||!trial.connection):creatingFolder)}>
-                  {recoveryDemo?(driveLink?"Create new sample folder":"Create sample folder"):driveLink?"Create new folder":"Create Drive folder"}
+                <div className="sl-folder-options">
+                {!driveLink&&<><button type="button" className="sl-secondary sl-folder-paste" disabled={trial.busy||creatingFolder} onClick={pasteDriveLink}><RefreshIcon name="Clipboard" size={14}/>Paste Drive link</button><span className="sl-folder-or">OR</span></>}
+                {(!driveLink||realDriveTrial)&&<button type="button" className="sl-secondary sl-folder-create" onClick={async()=>{if(!realDriveTrial)return createFolder();if(await trial.create(Boolean(driveLink)))setIntakeMode("drive-trial");}} disabled={generating||(realDriveTrial?(trial.busy||!trial.connection):creatingFolder)}>
+                  {creatingFolder?<span className="sl-folder-spin"><RefreshIcon name="LoaderCircle" size={14}/></span>:<RefreshIcon name="FolderPlus" size={14}/>}
+                  {creatingFolder?"Creating folder...":recoveryDemo?(driveLink?"Create new sample folder":"Create sample folder"):driveLink?"Create new folder":"Create Drive folder"}
                 </button>}
+                </div>
               </>}
               {!result&&editingDrive&&<form className="sl-folder-editor" onSubmit={event=>{event.preventDefault();confirmDriveLink();}}>
                 <input autoFocus aria-label="Google Drive link" value={driveDraft} onChange={event=>editDriveLink(event.target.value)} placeholder="Paste a Google Drive folder link"/>
@@ -2393,6 +2407,7 @@ Saujana Film Lab Bali`;
                 {driveLinkError&&<p role="alert">{driveLinkError}</p>}
               </form>}
               {realDriveTrial&&trial.folderStatus&&<p role="status" className="sl-intake-mode-note">{trial.folderStatus}</p>}
+              {!realDriveTrial&&<p className="sl-folder-status" role="status">{creatingFolder?"Creating your Drive folder...":createdFolderLink&&createdFolderLink===driveLink?<><RefreshIcon name="Check" size={14}/>Drive folder ready</>:null}</p>}
             </section>
 <div className="cs-studio-container" inert={result||generating||publishRetry?"":undefined}>          <ContactSheetGenerator
             key={workspaceGeneration}

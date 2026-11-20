@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-20261120">
+<head><meta name="dispatch-release" content="workshop-v3-upload-recovery-20261120">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -3323,10 +3323,20 @@ function workshopRollTarget(orderNo,folder,group){
   const rollName="Roll "+String(rollNumber).padStart(2,"0")+(name?" - "+name:"")+(group.blank&&!workshopIsBlankRoll(name)?" BLANK":"");
   return {orderNumber,orderFolderId:folder,rollNumber,rollName};
 }
-async function workshopDriveAction(action,data){
-  const result=await apiCall(action,data,{retry:false});
-  if(!result||result.error)throw Error(result?.error||"Drive did not confirm the upload request.");
-  return result;
+let workshopSessionQueue=Promise.resolve();
+function workshopDriveAction(action,data){
+  // Apps Script locks session creation, but the scans themselves can transfer in parallel.
+  const request=workshopSessionQueue.then(async()=>{
+    for(let attempt=0;;attempt++){
+      const result=await apiCall(action,data,{retry:false});
+      if(result&&!result.error)return result;
+      const busy=result?.error==="Drive folder creation is busy. Please try again."||result?.httpStatus===429;
+      if(!busy||attempt>=2)throw Error(result?.error||"Drive did not confirm the upload request.");
+      await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+    }
+  });
+  workshopSessionQueue=request.catch(()=>{});
+  return request;
 }
 async function workshopSendOriginal(job,file,update){
   const original=file.original,size=original.size;
@@ -3346,14 +3356,28 @@ async function workshopSendOriginal(job,file,update){
     const api=new URL(WORKER_API);api.searchParams.set("action","workshopUploadBytes");
     const res=await fetch(api.href,{method:"POST",headers:{Authorization:"Bearer "+encodeURIComponent(getContactSheetAdminKey()),"X-Workshop-Session":url.href,"X-Workshop-Range":range},body,credentials:"omit",redirect:"error",referrerPolicy:"no-referrer",signal:AbortSignal.timeout(120000)});
     const reply=await res.json();
-    if(!res.ok||reply.error||typeof reply.done!=="boolean"||!Number.isSafeInteger(reply.offset))throw Error(reply.error||"Drive did not confirm the upload.");
+    if(!res.ok||reply.error||typeof reply.done!=="boolean"||!Number.isSafeInteger(reply.offset)){
+      const error=Error(reply.error||"Drive did not confirm the upload.");
+      error.transient=[408,429,500,502,503,504].includes(res.status)&&!/^Drive did not confirm the upload \((?:400|401|403|404|409|410)\)\.$/.test(error.message);
+      throw error;
+    }
     return reply;
   }
-  let state=await put("bytes */"+size,null);
+  let state=await put("bytes */"+size,null),recoveries=0;
   while(!state.done){
     const start=state.offset,end=Math.min(start+8*1024*1024,size);
     if(!Number.isSafeInteger(start)||start<0||start>=size)throw Error("Drive did not confirm the final file.");
-    state=await put("bytes "+start+"-"+(end-1)+"/"+size,original.slice(start,end));
+    try{
+      state=await put("bytes "+start+"-"+(end-1)+"/"+size,original.slice(start,end));
+    }catch(error){
+      if(recoveries>=2||!(error.transient||error instanceof TypeError||error.name==="TimeoutError"))throw error;
+      recoveries++;
+      await new Promise(resolve=>setTimeout(resolve,500*recoveries));
+      // Check what Drive actually received before sending any bytes again.
+      state=await put("bytes */"+size,null);
+      if(state.offset<start||state.offset>end)throw Error("Drive returned an invalid upload position.");
+      file.offset=state.offset;update();continue;
+    }
     if(state.offset<=start||state.offset>end)throw Error("Drive did not confirm the uploaded bytes.");
     file.offset=state.offset;update();
   }
@@ -3463,6 +3487,12 @@ function useRealDriveTransfers() {
     update();pump();return true;
   }
   function toggle(batch){const job=jobs.current.find(job=>job.batch===batch);if(job)job.expanded=!job.expanded;update();}
+  function retryFailed(batch){
+    const job=jobs.current.find(job=>job.batch===batch);
+    if(!WORKSHOP_UPLOADS||!job||inFlight(job))return;
+    for(const file of job.files)if(file.state==="error"){file.state="queued";file.error="";}
+    update();pump();
+  }
   function done(job){return job.files.every(file=>file.state==="done")&&[...job.sheetTasks.values()].every(task=>task.state==="done");}
   function inFlight(job){return job.files.some(file=>["queued","sending"].includes(file.state))||[...job.sheetTasks.values()].some(task=>task.state==="building");}
   function dismiss(batch){jobs.current=jobs.current.filter(job=>job.batch!==batch||inFlight(job));dismissInterrupted(batch);update();}
@@ -3511,7 +3541,7 @@ function useRealDriveTransfers() {
           sheetState:derivatives.some(file=>file.state==="error")?"error":task?.state};
       })};
   });
-  return {transfers,enqueue,toggle,dismiss,interrupted,dismissInterrupted};
+  return {transfers,enqueue,toggle,dismiss,interrupted,dismissInterrupted,retryFailed};
 }
 
 function orderTransferStage(job){
@@ -3561,7 +3591,9 @@ function UploadNote({job,manager,interrupted=false}){
       <button type="button" className="sl-icon-button" aria-label={"Dismiss upload note for order "+number} title="Dismiss upload note" onClick={()=>interrupted?manager.dismissInterrupted(job.batch):manager.dismiss(job.batch)}><RefreshIcon name="X" size={15}/></button>
     </div>
     {!job.done&&<>
-      <p>{allScansSent?"All scans reached Drive. Contact sheets did not finish.":job.sent+" of "+job.total+" scans confirmed. Please update in Drive."}</p>
+      <p>{allScansSent&&job.error?"Scans reached Drive, but one roll did not finish.":job.sent+" of "+job.total+" scans confirmed. Please update in Drive."}</p>
+      {WORKSHOP_UPLOADS&&!interrupted&&job.files?.filter(file=>file.state==="error").map((file,i)=><p key={i}>{file.error}</p>)}
+      {WORKSHOP_UPLOADS&&!interrupted&&job.files?.some(file=>file.state==="error")&&<button type="button" className="sl-secondary" onClick={()=>manager.retryFailed(job.batch)}>Retry missing files</button>}
       <OrderStatusDriveLink folder={job.folder}/>
     </>}
   </article>;

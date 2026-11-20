@@ -1,4 +1,4 @@
-function DriveScanImport({folderUrl='',rolls,selectedRoll=0,excludedRolls=[],loadedRolls=[],api,onImport,disabled=false}){
+function DriveScanImport({folderUrl='',rolls,selectedRoll=0,excludedRolls=[],loadedRolls=[],api,onImport,disabled=false,isBlankRoll=null,rollNumber=null,onBlankRolls=null}){
  const [open,setOpen]=React.useState(false),[minimized,setMinimized]=React.useState(false),[folder,setFolder]=React.useState(folderUrl),[manifest,setManifest]=React.useState(null),[mapping,setMapping]=React.useState({}),[error,setError]=React.useState(''),[phase,setPhase]=React.useState('idle'),[replace,setReplace]=React.useState(false),[progress,setProgress]=React.useState({current:0,total:0}),[notice,setNotice]=React.useState(null);
  const request=React.useRef(null),dialog=React.useRef(null),trigger=React.useRef(null),live=React.useRef(true),epoch=React.useRef(0);
  const busy=phase!=='idle',loading=phase==='loading';
@@ -9,23 +9,37 @@ function DriveScanImport({folderUrl='',rolls,selectedRoll=0,excludedRolls=[],loa
  function show(){if(open){setMinimized(false);return;}setFolder(folderUrl);setManifest(null);setMapping({});setError('');setReplace(false);setProgress({current:0,total:0});setNotice(null);setOpen(true);}
  async function list(){
   const operation=++epoch.current;setPhase('checking');setError('');setManifest(null);setReplace(false);
-  try{const result=await api('listDriveScans',{folderUrl:folder});if(result?.error)throw Error(result.error);if(!result?.groups?.length)throw Error('No scans found.');if(!live.current||operation!==epoch.current)return;
+  try{const result=await api('listDriveScans',{folderUrl:folder,...(isBlankRoll?{skipBlankRolls:true}:{})});if(result?.error)throw Error(result.error);if(!result?.groups?.length)throw Error('No scans found.');if(!live.current||operation!==epoch.current)return;
    const available=rolls.map((_,index)=>index).filter(index=>!excludedRolls.includes(index));
-   setMapping(Object.fromEntries(result.groups.map((group,index)=>[group.id,result.groups.length>available.length?'':result.groups.length===1&&!excludedRolls.includes(selectedRoll)?selectedRoll:available[index]??''])));setManifest(result);
+   const reserved=new Set(),byFolder={};
+   if(isBlankRoll){
+    for(const group of result.groups){
+     const index=rollNumber(group.name)-1;
+     if(index<0)continue;
+     if(rolls[index]&&(isBlank(group)||available.includes(index))&&!reserved.has(index)){reserved.add(index);byFolder[group.id]=index;}
+     else byFolder[group.id]='';
+    }
+    const unmatched=available.filter(index=>!reserved.has(index));
+    for(const group of result.groups)if(byFolder[group.id]===undefined)byFolder[group.id]=result.groups.length===1&&available.includes(selectedRoll)?selectedRoll:unmatched.shift()??'';
+   }else for(const [index,group] of result.groups.entries())byFolder[group.id]=result.groups.length>available.length?'':result.groups.length===1&&!excludedRolls.includes(selectedRoll)?selectedRoll:available[index]??'';
+   setMapping(byFolder);setManifest(result);
   }catch(error){if(live.current&&operation===epoch.current)setError(error.message);}finally{if(live.current&&operation===epoch.current)setPhase('idle');}
  }
- const selectedGroups=manifest?.groups.filter(group=>mapping[group.id]!==''&&mapping[group.id]!==undefined)||[];
+ const isBlank=group=>Boolean(isBlankRoll&&(group.blank||isBlankRoll(group.name)));
+ const blankTargets=manifest?.groups.filter(group=>isBlank(group)&&Number.isInteger(mapping[group.id])).map(group=>mapping[group.id])||[];
+ const selectedGroups=manifest?.groups.filter(group=>!isBlank(group)&&mapping[group.id]!==''&&mapping[group.id]!==undefined)||[];
  const targets=selectedGroups.map(group=>Number(mapping[group.id]));
- const duplicates=new Set(targets).size!==targets.length;
+ const duplicates=new Set([...targets,...blankTargets]).size!==targets.length+blankTargets.length;
  const invalidMapping=targets.some(index=>!Number.isInteger(index)||!rolls[index]||excludedRolls.includes(index));
  const overwrites=targets.some(index=>loadedRolls.includes(index));
  const selectedCount=selectedGroups.reduce((sum,group)=>sum+group.files.length,0),percent=progress.total?Math.floor(progress.current/progress.total*100):0;
  const progressText=phase==='checking'?'Checking folder...':loading?`${progress.current} / ${progress.total} scans ready`:error?'Import stopped':manifest?'Folder checked':'Check folder';
  async function load(){
-  if(busy||!selectedGroups.length||duplicates||invalidMapping||overwrites&&!replace)return;
+  if(busy||(!selectedGroups.length&&!blankTargets.length)||duplicates||invalidMapping||overwrites&&!replace)return;
+  if(!selectedGroups.length){onBlankRolls?.(blankTargets);close();return;}
   const operation=++epoch.current,controller=new AbortController();request.current=controller;setPhase('loading');setProgress({current:0,total:selectedCount,phase:'downloading',roll:1,rolls:selectedGroups.length});setError('');
   try{await onImport(selectedGroups.map(group=>({...group,rollIndex:Number(mapping[group.id])})),{signal:controller.signal,onProgress:value=>{if(live.current&&operation===epoch.current&&!controller.signal.aborted)setProgress(value);}});
-   if(live.current&&operation===epoch.current&&!controller.signal.aborted){setOpen(false);setMinimized(false);setNotice({count:selectedCount,rolls:selectedGroups.length});trigger.current?.focus();}
+   if(live.current&&operation===epoch.current&&!controller.signal.aborted){if(blankTargets.length)onBlankRolls?.(blankTargets);setOpen(false);setMinimized(false);setNotice({count:selectedCount,rolls:selectedGroups.length});trigger.current?.focus();}
   }catch(error){if(live.current&&operation===epoch.current&&!controller.signal.aborted)setError(error.message);}
   finally{if(request.current===controller)request.current=null;if(live.current&&operation===epoch.current)setPhase('idle');}
  }
@@ -38,13 +52,13 @@ function DriveScanImport({folderUrl='',rolls,selectedRoll=0,excludedRolls=[],loa
   <div className="drive-import-body">
    {!loading&&<>{!manifest?<label className="drive-import-folder-field">Drive folder<input aria-label="Drive folder" type="url" value={folder} disabled={busy} readOnly={Boolean(folderUrl)} onChange={event=>{setFolder(event.target.value);setManifest(null);}}/></label>:<>
     <div className="drive-import-found"><div><span className="drive-import-checked">✓ Folder checked</span><h3>{manifest.folderName}</h3><small>{manifest.groups.length} {manifest.groups.length===1?'folder':'folders'} · {manifest.totalFiles??manifest.groups.reduce((sum,group)=>sum+group.files.length,0)} scans found</small></div><button type="button" disabled={busy} onClick={list}>Check again</button></div>
-    <div className="drive-import-map-head"><span>Drive folder</span><span>Film roll</span></div><div className="drive-import-map">{manifest.groups.map(group=><label key={group.id}><span><strong>{group.name}</strong><small>{group.files.length} scans</small></span><select aria-label={`Roll for ${group.name}`} disabled={busy} value={mapping[group.id]} onChange={event=>{setMapping(previous=>({...previous,[group.id]:event.target.value===''?'':Number(event.target.value)}));setReplace(false);}}><option value="">Skip folder</option>{rolls.map((name,index)=>!excludedRolls.includes(index)&&<option key={index} value={index}>Roll {index+1} · {name}</option>)}</select></label>)}</div>
+    <div className="drive-import-map-head"><span>Drive folder</span><span>Film roll</span></div><div className="drive-import-map">{manifest.groups.map(group=><label key={group.id}><span><strong>{group.name}</strong><small>{isBlank(group)?'Blank roll · No contact sheet':`${group.files.length} scans`}</small></span><select aria-label={`Roll for ${group.name}`} disabled={busy} value={mapping[group.id]} onChange={event=>{setMapping(previous=>({...previous,[group.id]:event.target.value===''?'':Number(event.target.value)}));setReplace(false);}}><option value="">Skip folder</option>{rolls.map((name,index)=>(isBlank(group)||!excludedRolls.includes(index))&&<option key={index} value={index}>Roll {index+1} · {name}</option>)}</select></label>)}</div>
     {duplicates&&<p role="alert">Choose a different film roll for each folder.</p>}{invalidMapping&&<p role="alert">Check the film rolls before loading.</p>}{overwrites&&<label className="drive-import-replace"><input type="checkbox" checked={replace} disabled={busy} onChange={event=>setReplace(event.target.checked)}/>Replace scans already loaded for these rolls</label>}
    </>}</>}
    {loading&&<div className="drive-import-loading"><div className="drive-import-rollo" aria-hidden="true"/><span className="drive-import-eyebrow">ROLLO IS ON IT</span><h3 role="status">{progressText}</h3><progress aria-label="Scans prepared" value={progress.current} max={progress.total||1}/><div className="drive-import-progress-labels"><span>{progress.current===progress.total?'Finishing import':progress.phase==='preparing'?'Preparing scan':'Downloading scan'}{progress.current<progress.total?` ${progress.current+1}`:''}</span><strong>{percent}%</strong></div>{progress.rolls>1&&<small>Roll {progress.roll} of {progress.rolls}</small>}</div>}
    {phase==='checking'&&<p className="drive-import-checking" role="status">Checking folder...</p>}{error&&<p role="alert">{error}</p>}
   </div>
-  <footer><span className="drive-import-selection" role="status">{loading?'Import continues when minimized.':manifest?`${selectedGroups.length} ${selectedGroups.length===1?'roll':'rolls'} · ${selectedCount} scans selected`:'Step 1 of 2'}</span><div><button type="button" onClick={close}>{busy?'Cancel import':'Cancel'}</button>{loading?<button type="button" className="drive-import-primary" onClick={minimize}>Minimize</button>:<button type="button" className="drive-import-primary" disabled={busy||!folder.trim()||Boolean(manifest&&(!selectedGroups.length||duplicates||invalidMapping||overwrites&&!replace))} onClick={manifest?load:list}>{busy?'Checking folder...':manifest?'Load scans':'Check folder'}<span aria-hidden="true"> →</span></button>}</div></footer>
+  <footer><span className="drive-import-selection" role="status">{loading?'Import continues when minimized.':manifest?(selectedGroups.length?`${selectedGroups.length} ${selectedGroups.length===1?'roll':'rolls'} · ${selectedCount} scans selected`:blankTargets.length?'No contact sheets for blank rolls':'0 scans selected'):'Step 1 of 2'}</span><div><button type="button" onClick={close}>{busy?'Cancel import':'Cancel'}</button>{loading?<button type="button" className="drive-import-primary" onClick={minimize}>Minimize</button>:<button type="button" className="drive-import-primary" disabled={busy||!folder.trim()||Boolean(manifest&&((!selectedGroups.length&&!blankTargets.length)||duplicates||invalidMapping||overwrites&&!replace))} onClick={manifest?load:list}>{busy?'Checking folder...':manifest?(!selectedGroups.length&&blankTargets.length?'Done':'Load scans'):'Check folder'}<span aria-hidden="true"> →</span></button>}</div></footer>
  </section></div>,document.body)}
  {((open&&minimized)||notice)&&ReactDOM.createPortal(<aside className={`drive-import-dock ${notice?'complete':error?'failed':''}`} role="region" aria-label={notice?'Drive import result':'Drive import progress'} onKeyDown={event=>event.stopPropagation()}>
   <div className="drive-import-dock-mark" aria-hidden="true">{notice?'✓':error?'!':<span/>}</div><div className="drive-import-dock-content" role="status"><strong>{notice?'Scans loaded':progressText}</strong><span>{notice?`${notice.count} scans · Review and finalize contact sheets`:error?'Previous scans kept. Open to retry.':loading&&progress.rolls>1?`Roll ${progress.roll} of ${progress.rolls}`:phase==='checking'?'Google Drive':manifest?'Ready to load scans':'Google Drive'}</span>{loading&&<progress aria-label="Scans prepared" value={progress.current} max={progress.total||1}/>}</div><div className="drive-import-dock-actions">{notice?<><button type="button" onClick={viewScans}>View scans</button><button type="button" className="drive-import-icon" aria-label="Dismiss import result" title="Dismiss" onClick={()=>setNotice(null)}>×</button></>:<><button type="button" onClick={()=>setMinimized(false)}>Show import</button><button type="button" onClick={close}>{busy?'Cancel import':'Close'}</button></>}</div>

@@ -1,5 +1,5 @@
 const CSG_COLLATOR = new Intl.Collator(undefined, { numeric:true, sensitivity:"base" });
-const CSG_ALLOWED = /\.(jpe?g|tiff?)$/i;
+const CSG_ALLOWED = /\.(jpe?g|tiff?|png)$/i;
 const CSG_LOGOS = {};
 
 function csgFileName(file) {
@@ -7,7 +7,7 @@ function csgFileName(file) {
 }
 
 function csgSupportedFile(file) {
-  return CSG_ALLOWED.test(csgFileName(file)) || /image\/(jpeg|tiff|x-tiff)/i.test(file.type);
+  return CSG_ALLOWED.test(csgFileName(file)) || /image\/(jpeg|tiff|x-tiff|png)/i.test(file.type);
 }
 
 function csgIsTiffFile(file) {
@@ -137,11 +137,12 @@ function csgRebate(ctx, x, y, width, height, frame, showNumber, compact) {
   }
 }
 
-async function csgRender(canvas, frames, output, format, numbered, filmName, customerName, scanStyle) {
+async function csgRender(canvas, frames, output, format, numbered, filmName, customerName, scanStyle, {scale=1,signal}={}) {
   const width = output === "delivery" ? 1600 : 1080;
   const height = output === "delivery" ? 1200 : 1920;
-  canvas.width = width; canvas.height = height;
+  canvas.width = Math.round(width*scale); canvas.height = Math.round(height*scale);
   const ctx = canvas.getContext("2d", { alpha:false, colorSpace:"srgb" });
+  if(scale!==1)ctx.scale(scale,scale);
   ctx.fillStyle = "#070707"; ctx.fillRect(0,0,width,height);
 
   const margin = output === "delivery" ? 54 : 38;
@@ -194,9 +195,10 @@ async function csgRender(canvas, frames, output, format, numbered, filmName, cus
       const x = rowX + column * (cellWidth + gapX);
       const y = startY + row * (cellHeight + gapY);
       ctx.fillStyle = "#151515"; ctx.fillRect(x,y,cellWidth,imageHeight);
+      if(signal?.aborted)return;
       const bitmap = await createImageBitmap(frames[index].blob);
-      csgContained(ctx, bitmap, x, y, cellWidth, imageHeight);
-      bitmap.close();
+      try{if(signal?.aborted)return;csgContained(ctx,bitmap,x,y,cellWidth,imageHeight);}
+      finally{bitmap.close();}
       csgRebate(ctx,x,y+imageHeight,cellWidth,rebate,index+1,numbered,cellWidth<100);
     }
   }
@@ -264,7 +266,7 @@ async function csgFileToPreparedBlob(file) {
   }
 }
 
-function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null, layoutPreview=false, onSheetInvalidated=null,driveLink='',driveApi=null,readDriveFile=null }) {
+function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:linkedCustomerName="", rolls:linkedRolls=[], excludedRolls=[], onRollInclusionChange=null, onSheetsChange=null, layoutPreview=false, onSheetInvalidated=null,driveLink='',driveApi=null,readDriveFile=null,onWorkspaceState=null,onFilmNameChange=null,onCustomerNameChange=null,intakeModeControl=null,driveTransferPanel=null,driveFolderPanel=null,uploadJob=null,retryUploadRoll=null,localTrialIntake=false,skipSheetPreparation=false,uploadTrialRolls=null,correctionRollIndex=null,recoverySample=false }) {
   const availableRolls = React.useMemo(() => linkedRolls.map(value=>String(value||"").trim()).filter(Boolean), [linkedRolls]);
   const [selectedRoll,setSelectedRoll] = React.useState(0);
   const [frames,setFrames] = React.useState([]);
@@ -283,6 +285,9 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const [error,setError] = React.useState("");
   const [dragging,setDragging] = React.useState(false);
   const [rollWorkspaces,setRollWorkspaces] = React.useState({});
+  const [intakeCounts,setIntakeCounts]=React.useState({});
+  const mounted=React.useRef(true);
+  React.useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const deliveryRef = React.useRef(null);
   const storyRef = React.useRef(null);
   const inputRef = React.useRef(null);
@@ -292,7 +297,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   const driveContext=React.useRef('');driveContext.current=JSON.stringify({orderNumber,customerName,rolls:availableRolls,excludedRolls,driveLink});
 
   React.useEffect(()=>{
-    if(!layoutPreview||demoLoaded.current||availableRolls.length!==3||new URLSearchParams(location.search).get('demo')!=='1'||!['localhost','127.0.0.1'].includes(location.hostname))return;
+    if(localTrialIntake||!layoutPreview||demoLoaded.current||availableRolls.length!==2||new URLSearchParams(location.search).get('demo')!=='1'||!['localhost','127.0.0.1'].includes(location.hostname))return;
     demoLoaded.current=true;let live=true;
     (async()=>{
       const blobs=[];
@@ -303,7 +308,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       }
       if(!live)return;
       const workspaces={};
-      [36,24,12].forEach((count,index)=>{
+      [36,24].forEach((count,index)=>{
         workspaces[index]={frames:Array.from({length:count},(_,frame)=>({name:`demo-roll-${index+1}-${String(frame+1).padStart(2,'0')}.jpg`,blob:blobs[(frame+index*2)%blobs.length]})),scanStyle:['Classic','Isle Punch','Flat'][index],format:'full',numbered:true,confirmed:false,active:'delivery',progress:`${count} demo frames loaded`};
       });
       setRollWorkspaces(workspaces);setFrames(workspaces[0].frames);setProgress(workspaces[0].progress);
@@ -429,6 +434,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
   }
 
   async function prepare(fileList, folderName="") {
+    if(layoutPreview)return rollIntake.pick(fileList);
     const files = csgSortFiles(fileList);
     if (!files.length) { setError("Choose JPEG or TIFF scan files."); return; }
     setWorking(true); setIsPreparing(true); setPrepareCount({current:0,total:files.length}); setError(""); setFrames([]);
@@ -439,7 +445,85 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
     finally { setWorking(false); setIsPreparing(false); }
   }
 
+  async function prepareReplacement(fileList) {
+    if(working||skipSheetPreparation||excludedRolls.includes(selectedRoll)||!availableRolls[selectedRoll])return;
+    const files=csgSortFiles(fileList);
+    if(!files.length){setError("Choose JPEG, TIFF or PNG scans.");return;}
+    setWorking(true);setIsPreparing(true);setPrepareCount({current:0,total:files.length});setError("");
+    try {
+      const prepared=await prepareFiles(files);
+      if(!mounted.current)return;
+      ReactDOM.unstable_batchedUpdates(()=>{
+        setFrames(prepared);setConfirmed(false);setProgress(prepared.length+" scans loaded for this roll");
+        setReadyRolls(previous=>{const next={...previous};delete next[selectedRoll];return next;});
+        onSheetInvalidated?.(selectedRoll);
+      });
+    } catch(error){setError(error.message||"The scans could not be prepared.");}
+    finally{setWorking(false);setIsPreparing(false);}
+  }
+  async function prepareTrialGroups(groups) {
+    if(working||!mounted.current||(skipSheetPreparation&&!uploadTrialRolls))return;
+    const mapped=groups;
+    const sheets=mapped.filter(({index,blank})=>!blank&&!excludedRolls.includes(index)&&!skipSheetPreparation);
+    const sheetIndexes=new Set(sheets.map(group=>group.index));
+    const preparedByRoll=new Map();
+    const getFrames=(group,onProgress)=>{
+      if(!preparedByRoll.has(group.index)){
+        const task=workshopPrepareFrames(group.files,onProgress);
+        task.catch(()=>{if(preparedByRoll.get(group.index)===task)preparedByRoll.delete(group.index);});
+        preparedByRoll.set(group.index,task);
+      }
+      return preparedByRoll.get(group.index);
+    };
+    setError("");
+    if(uploadTrialRolls){
+      uploadTrialRolls(mapped.map(group=>({...group,
+        buildSheets:group.folder&&sheetIndexes.has(group.index)?async()=>{
+          const prepared=await getFrames(group);
+          const files=[];
+          for(const [mode,label] of [["delivery","landscape"],["story","portrait"]]){
+            const canvas=document.createElement("canvas");
+            try{
+              await csgRender(canvas,prepared,mode,"full",true,group.name,customerName,"Classic");
+              files.push(new File([await csgCanvasBlob(canvas)],label+".jpg",{type:"image/jpeg"}));
+            }finally{canvas.width=canvas.height=0;}
+          }
+          return files;
+        }:null})));
+      setIntakeCounts(previous=>({...previous,...Object.fromEntries(mapped.map(({index,files})=>[index,files.length]))}));
+    }
+    const total=sheets.reduce((sum,group)=>sum+group.files.length,0);
+    if(!total)return;
+    setWorking(true);setIsPreparing(true);setError("");setPrepareCount({current:0,total});
+    try {
+      const prior={frames,scanStyle,format,numbered,confirmed,active,progress};
+      const updates={};let preparedCount=0;
+      for(const group of sheets) {
+        const prepared=await getFrames(group,current=>{if(mounted.current)setPrepareCount({current:preparedCount+current,total});});
+        preparedCount+=prepared.length;
+        if(!mounted.current)return;
+        updates[group.index]={frames:prepared,scanStyle:"Classic",format:"full",numbered:true,confirmed:false,active:"delivery",
+          progress:group.name+" / "+prepared.length+" scans loaded"};
+      }
+      const index=sheets[0].index,first=updates[index];
+      ReactDOM.unstable_batchedUpdates(()=>{
+        setRollWorkspaces(previous=>({...previous,[selectedRoll]:prior,...updates}));
+        setSelectedRoll(index);setFilmName(availableRolls[index]);setFrames(first.frames);
+        setScanStyle(first.scanStyle);setFormat(first.format);setNumbered(first.numbered);
+        setConfirmed(false);setActive(first.active);setProgress(first.progress);
+      });
+    } catch(error){setError(error.message||"The scans could not be prepared.");}
+    finally{setWorking(false);setIsPreparing(false);}
+  }
+  const rollIntake=useWorkshopIntake({available:availableRolls,correctionRollIndex,
+    occupied:availableRolls.map((_,index)=>index).filter(index=>intakeCounts[index]||readyRolls[index]||
+      (!uploadTrialRolls&&excludedRolls.includes(index))||(index===selectedRoll?frames:rollWorkspaces[index]?.frames)?.length),
+    sheetLoaded:new Set(availableRolls.map((_,index)=>index).filter(index=>(index===selectedRoll?frames:rollWorkspaces[index]?.frames)?.length)),
+    prepare:prepareTrialGroups,orderName:orderNumber?"Order "+orderNumber:"Order folder",job:uploadJob,
+    uploadsEnabled:Boolean(uploadTrialRolls),skipSheets:skipSheetPreparation,uploadBlocked:working,
+    recordExcluded:indexes=>indexes.forEach(index=>onRollInclusionChange?.(index,false))});
   async function prepareFolderDrop(dataTransfer) {
+    if(layoutPreview)return rollIntake.receive(dataTransfer);
     setError("");
     let groups;
     try { groups = await csgDroppedFolders(dataTransfer); }
@@ -488,6 +572,7 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
       const storyBlob = await csgCanvasBlob(storyRef.current);
       setProgress("Contact sheet ready for delivery");
       if(layoutPreview)setReadyRolls(previous=>({...previous,[selectedRoll]:{frames,scanStyle,format,numbered,filmName,customerName}}));
+      if(!mounted.current)return;
       if (onSheetsChange) onSheetsChange({
         ready:true,
         rollIndex:selectedRoll,
@@ -516,10 +601,12 @@ function ContactSheetGenerator({ embedded=false, orderNumber="", customerName:li
 
   const rollIncluded = !excludedRolls.includes(selectedRoll);
   const loadedRolls=availableRolls.map((_,index)=>index).filter(index=>(index===selectedRoll?frames:rollWorkspaces[index]?.frames)?.length);
-  const driveControl=driveApi&&readDriveFile?<DriveScanImport folderUrl={driveLink} rolls={availableRolls} selectedRoll={selectedRoll} excludedRolls={excludedRolls} loadedRolls={loadedRolls} api={driveApi} onImport={importDriveGroups} disabled={working||isPreparing||Boolean(frames.length&&!rendered)}/>:null;
+  const driveControl=driveApi&&readDriveFile?<DriveScanImport folderUrl={driveLink} rolls={availableRolls} selectedRoll={selectedRoll} excludedRolls={excludedRolls} loadedRolls={loadedRolls} api={driveApi} onImport={importDriveGroups} {...(layoutPreview&&correctionRollIndex===null?{isBlankRoll:workshopIsBlankRoll,rollNumber:workshopRollNumber,onBlankRolls:indexes=>indexes.forEach(index=>onRollInclusionChange?.(index,false))}:{})} disabled={working||isPreparing||Boolean(frames.length&&!rendered)}/>:null;
 
   if(layoutPreview)return <ContactSheetStudio
+    rollIntake={rollIntake} localTrialIntake={localTrialIntake} intakeModeControl={intakeModeControl} driveTransferPanel={driveTransferPanel} driveFolderPanel={driveFolderPanel} onWorkspaceState={onWorkspaceState} onFilmNameChange={onFilmNameChange} onCustomerNameChange={onCustomerNameChange} correctionRollIndex={correctionRollIndex} recoverySample={recoverySample}
     rolls={availableRolls} selectedRoll={selectedRoll} workspaces={rollWorkspaces} frames={frames} readyRolls={readyRolls} excludedRolls={excludedRolls} driveControl={driveControl}
+    intakeCounts={intakeCounts} prepareReplacement={prepareReplacement} skipSheetPreparation={skipSheetPreparation} allowIntake={Boolean(uploadTrialRolls)||!skipSheetPreparation}
     chooseRoll={chooseLinkedRoll} includeRoll={onRollInclusionChange} filmName={filmName} customerName={customerName} orderNumber={orderNumber}
     scanStyle={scanStyle} setScanStyle={setScanStyle} format={format} setFormat={setFormat} numbered={numbered} setNumbered={setNumbered}
     confirmed={confirmed} setConfirmed={setConfirmed} active={active} setActive={setActive} working={working||isPreparing||Boolean(frames.length&&!rendered)} isPreparing={isPreparing}

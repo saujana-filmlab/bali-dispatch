@@ -668,8 +668,10 @@ select option,select optgroup{background-color:var(--field)!important;color:var(
 .sl-customer-activity svg{flex:none}
 body[data-theme=light] .sl-customer-activity>span[data-activity=added]{background:#e8f3eb;color:#21583a;border-color:#abc9b7}
 body[data-theme=light] .sl-customer-activity>span[data-activity=order]{background:#f5edda;color:#71501c;border-color:#d9c497}
-.sl-directory-rows{display:grid}
-.sl-customer-row{display:flex;align-items:center;gap:11px;padding:17px 14px;border:0;border-bottom:1px solid var(--border);background:none;color:var(--white);text-align:left;min-width:0;border-left:3px solid transparent}
+.sl-directory-rows{display:flex;flex-direction:column}
+.sl-directory-rows>*{flex:none}
+.sl-customer-row{display:flex;align-items:center;gap:11px;padding:17px 14px;border:0;border-bottom:1px solid var(--border);background:none;color:var(--white);text-align:left;min-width:0;min-height:69px;border-left:3px solid transparent}
+.sl-customer-row:focus-visible{outline-offset:-3px}
 .sl-customer-row:last-child{border-bottom:0}
 .sl-customer-row:hover{background:var(--card2)}
 .sl-customer-row.selected{background:var(--blue-gl);border-left-color:var(--sl-accent)}
@@ -682,6 +684,22 @@ body[data-theme=light] .sl-customer-activity>span[data-activity=order]{backgroun
 .sl-customer-row>svg{color:var(--muted);flex:none}
 .sl-pagination{display:flex;align-items:center;justify-content:space-between;padding:12px;border-top:1px solid var(--border);color:var(--muted);font:11px var(--sl-mono)}
 .sl-customer-dossier{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;min-height:600px}
+.sl-registry .sl-customer-dossier>div{min-height:0}
+@media(min-width:751px) and (min-height:550px){
+ #root:has(>.dispatch-content>.sl-registry){display:flex;flex-direction:column;height:100dvh}
+ #root:has(>.dispatch-content>.sl-registry)>.sl-header{flex:none}
+ .dispatch-content:has(>.sl-registry){display:flex;flex-direction:column;flex:1;width:100%;min-height:0;padding-block:32px 24px!important}
+ .sl-registry{display:flex;flex-direction:column;flex:1;min-height:0}
+ .sl-registry>.sl-page-heading{flex:none}
+ .sl-registry .registry-workspace{flex:1;min-height:0;align-items:stretch}
+ .sl-registry .sl-status-column{display:flex;flex-direction:column;min-height:0}
+ .sl-registry .sl-order-status-jobs{max-height:16dvh}
+ .sl-registry .registry-list{min-height:0}
+ .sl-registry .sl-directory-toolbar,.sl-registry .sl-pagination{flex:none}
+ .sl-registry .sl-directory-rows,.sl-registry .sl-customer-dossier{
+   min-height:0;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable
+ }
+}
 .sl-profile-heading{display:flex;align-items:center;gap:16px;padding:26px}
 .sl-avatar-large{width:58px;height:58px;font:700 18px var(--sl-heading);text-transform:uppercase}
 .sl-profile-heading>div:first-of-type{flex:1;min-width:0}

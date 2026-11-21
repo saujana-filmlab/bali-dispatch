@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-folder-polish-20261120">
+<head><meta name="dispatch-release" content="workshop-v3-registry-scroll-20261121">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -266,7 +266,7 @@ input,textarea{
       .registry-detail>div{height:auto!important}
     }
   </style>
-<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-folder-polish-20261120"><script src="/refresh/lucide.js"></script></head>
+<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-registry-scroll-20261121"><script src="/refresh/lucide.js"></script></head>
 <body>
 <div id="root"></div>
 <script type="text/babel" src="contact-sheet-studio.jsx?v=20261105-drive-edit"></script>
@@ -2602,13 +2602,13 @@ async function updateCustomerInfo() {
       {orderStatus}
       <aside className="registry-list sl-directory">
         <div className="sl-directory-toolbar"><label className="sl-search"><RefreshIcon name="Search"/><input aria-label="Search customers" placeholder="Search name, email or phone..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}}/>{search&&<button aria-label="Clear customer search" onClick={()=>{setSearch("");setPage(1)}}><RefreshIcon name="X" size={14}/></button>}</label><div className="sl-directory-order-group" role="group" aria-label="Sort customers">{[{value:"name",label:"A-Z"},{value:"orders",label:"Most Orders"},{value:"recent",label:"Recent"}].map(option=><button key={option.value} aria-pressed={sortBy===option.value} title={option.value==="recent"?"Newest registrations or order activity first":undefined} onClick={()=>{setSortBy(option.value);setPage(1)}}>{option.label}</button>)}</div><span className="sl-directory-result-count">{filtered.length} {filtered.length===1?"customer":"customers"}</span></div>
-        <div className="sl-directory-rows">{pagedCustomers.length?pagedCustomers.map(customer=><button className={"sl-customer-row "+(selected?.id===customer.id?"selected":"")} key={customer.id} onClick={()=>setSelected(customer)} aria-pressed={selected?.id===customer.id}>
+        <div className="sl-directory-rows" key={JSON.stringify([search,sortBy,currentPage])} role="region" aria-label="Customer results" tabIndex={0}>{pagedCustomers.length?pagedCustomers.map(customer=><button className={"sl-customer-row "+(selected?.id===customer.id?"selected":"")} key={customer.id} onClick={()=>setSelected(customer)} aria-pressed={selected?.id===customer.id}>
           <span className="sl-avatar">{(customer.name||"?").split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span><span className="sl-customer-identity"><strong>{customer.name}</strong><small>{customer.email}</small>{customer.phone&&<small>{customer.phone}</small>}{sortBy==="recent"&&<span className="sl-customer-activity">{customerActivity.get(String(customer.id))?.added>0&&<span data-activity="added"><RefreshIcon name="UserPlus" size={11}/>Added {fmtDate(customerActivity.get(String(customer.id)).added)}</span>}{customerActivity.get(String(customer.id))?.order>0&&<span data-activity="order"><RefreshIcon name="Film" size={11}/>Last order {fmtDate(customerActivity.get(String(customer.id)).order)}</span>}</span>}</span><span className="sl-order-tally">{customer.totalOrders||0}<small>{customer.totalOrders===1?"order":"orders"}</small></span><RefreshIcon name="ChevronRight" size={14}/>
         </button>):<div className="sl-empty-state"><RefreshIcon name="SearchX" size={26}/><h3>{search?"No matching customers":"No customers yet"}</h3><p>{search?"Try another name, email, or phone number.":"New customers will appear here."}</p></div>}</div>
         {totalPages>1&&<div className="sl-pagination"><button className="sl-icon-button" aria-label="Previous customer page" disabled={currentPage===1} onClick={()=>setPage(page=>Math.max(1,page-1))}><RefreshIcon name="ChevronLeft"/></button><span>{currentPage} / {totalPages}</span><button className="sl-icon-button" aria-label="Next customer page" disabled={currentPage===totalPages} onClick={()=>setPage(page=>Math.min(totalPages,page+1))}><RefreshIcon name="ChevronRight"/></button></div>}
       </aside>
       </div>
-      <div className="registry-detail sl-customer-dossier">
+      <div className="registry-detail sl-customer-dossier" role="region" aria-label="Customer details" tabIndex={0}>
         {selected?<>
           <header className="sl-profile-heading"><span className="sl-avatar sl-avatar-large">{selected.name.split(" ").filter(Boolean).slice(0,2).map(word=>word[0]).join("")}</span><div><span className="sl-eyebrow">Customer record</span><h2>{selected.name}</h2><p>{selected.email}</p>{selected.phone&&<p>{selected.phone}</p>}</div><div className="sl-profile-tools"><button className="sl-icon-button" aria-label="Edit customer" title="Edit customer" onClick={()=>{setEditing(selected);setForm({name:selected.name,email:selected.email,phone:selected.phone||""})}}><RefreshIcon name="Pencil"/></button><button className="sl-icon-button" aria-label="Remove customer" title="Remove customer" onClick={()=>del(selected.id)}><RefreshIcon name="Trash2"/></button><button className="sl-icon-button" aria-label="Close customer" title="Close customer" onClick={()=>setSelected(null)}><RefreshIcon name="X"/></button></div></header>
           <div className="sl-profile-meta"><span><strong>{selected.totalOrders||0}</strong> {selected.totalOrders===1?"order":"orders"}</span><span>Last visit <strong>{fmtDate(selected.lastOrderDate)}</strong></span><span>Added <strong>{fmtDate(selected.createdAt)}</strong></span><button className="sl-primary" onClick={()=>onNewOrderFor(selected)}><RefreshIcon name="Plus"/>New order</button></div>

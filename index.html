@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-registry-scroll-20261121">
+<head><meta name="dispatch-release" content="workshop-v3-analog-ui-20261123">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -266,7 +266,7 @@ input,textarea{
       .registry-detail>div{height:auto!important}
     }
   </style>
-<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-registry-scroll-20261121"><script src="/refresh/lucide.js"></script></head>
+<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-analog-ui-20261123"><script src="/refresh/lucide.js"></script></head>
 <body>
 <div id="root"></div>
 <script type="text/babel" src="contact-sheet-studio.jsx?v=20261105-drive-edit"></script>
@@ -2323,7 +2323,7 @@ Saujana Film Lab Bali`;
           <div className="sl-inline-field"><span>Collect negatives?</span><div className="sl-segment" role="group" aria-label="Collect negatives?">{[["yes","Yes"],["no","No"]].map(([value,label])=><button type="button" key={value} aria-pressed={collectNegatives===value} disabled={savingCollection} onClick={()=>setCollectNegatives(value)}>{label}</button>)}</div></div>
         </div>}
       </div>:!loadedPastOrder&&<div className="sl-order" inert={generating||publishRetry?"":undefined}>
-        <div className="sl-order-heading"><h2>New order</h2><span className="sl-draft"><i/>Draft</span></div>
+        <div className="sl-order-heading"><h2 className="sl-new-order-title">New order</h2><span className="sl-draft"><i aria-hidden="true"/>Draft</span></div>
         <div className="sl-form-group">
           <h3 className="sl-group-heading">Customer</h3>
           <label className="sl-field">Order number<div className={"sl-order-number "+(hasDuplicateOrder?"invalid":"")}><span>#</span><input aria-label="Order number" aria-invalid={hasDuplicateOrder} aria-describedby={hasDuplicateOrder?"sl-duplicate-order":undefined} autoComplete="off" value={orderNo} onChange={e=>setOrderNo(e.target.value)} placeholder="Enter order number"/></div></label>
@@ -2375,15 +2375,16 @@ Saujana Film Lab Bali`;
             </div>
             <div className="sl-studio-actions">
               <WorkshopPastOrderFinder search={orderSearch} onSearch={setOrderSearch} orders={pastOrders} onLoad={loadPastOrder} disabled={generating||Boolean(editingOrder)}/>
-              <span className="sl-duty"><i/>{recoveryDemo?"Recovery demo / Simulated Drive":realDriveTrial?"Private Drive trial":"Rollo is on duty"}</span>
+              {recoveryDemo||realDriveTrial
+                ? <span className="sl-duty"><i aria-hidden="true"/>{recoveryDemo?"Recovery demo / Simulated Drive":"Private Drive trial"}</span>
+                : <picture>
+                    <source media="(prefers-reduced-motion: reduce)" srcSet={workshopDaylight?"/refresh/brand/Rollo_On_Duty_Neon.svg#daylight-still":"/refresh/brand/Rollo_On_Duty_Neon.svg#still"}/>
+                    <img className="sl-duty-sign" src={workshopDaylight?"/refresh/brand/Rollo_On_Duty_Neon.svg#daylight":"/refresh/brand/Rollo_On_Duty_Neon.svg"} width="124" height="34" alt="Rollo is on duty"/>
+                  </picture>}
             </div>
           </header>
-          {!loadedPastOrder&&<nav className="sl-progress" aria-label="Workshop stages">
-            <a href="#refresh-folder" className={driveLink?"done":"active"}><span><i style={{width:driveLink?"100%":"0%"}}/></span><small>{driveLink&&<RefreshIcon name="Check" size={12}/>}01 Drive folder</small></a>
-            <a href="#refresh-intake" className={refreshWorkspace.some(roll=>roll.frames)?"done":""}><span><i style={{width:refreshWorkspace.some(roll=>roll.frames)?"100%":"0%"}}/></span><small>{refreshWorkspace.some(roll=>roll.frames)&&<RefreshIcon name="Check" size={12}/>}02 Scans</small></a>
-            <a href="#refresh-sheets" className="active"><span><i style={{width:skipContactSheets?"100%":Math.round(contactSheets.length/Math.max(1,namedRolls.length)*100)+"%"}}/></span><small>03 Contact sheets</small></a>
-            <a href="#refresh-publish" className={result?"done":""}><span><i style={{width:result?"100%":"0%"}}/></span><small>04 Publish</small></a>
-          </nav>}
+          {!loadedPastOrder&&<WorkshopFilmStrip folderReady={Boolean(driveLink)} scansReady={refreshWorkspace.some(roll=>roll.frames)}
+            skipSheets={skipContactSheets} sheetsReady={everyRollResolved} published={Boolean(result)}/>}
           {!loadedPastOrder&&<div className="sl-studio-body">
             <section id="refresh-folder" className={"sl-folder sl-step-summary "+(driveLink?"complete":"")} inert={generating||publishRetry?"":undefined}>
               <span className="sl-step-icon">{driveLink?<RefreshIcon name="Check" size={14}/>:"1"}</span><h2>Drive folder</h2>
@@ -2640,6 +2641,25 @@ function RefreshIcon({name,size=16,...props}) {
   const nodes=window.lucide?.icons?.[name]||[];
   return React.createElement("svg",{width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round","aria-hidden":true,...props},
     ...nodes.map(([tag,attrs],key)=>React.createElement(tag,{...attrs,key})));
+}
+
+function WorkshopFilmStrip({folderReady,scansReady,skipSheets,sheetsReady,published}){
+  const stages=[
+    ["folder","Drive folder",folderReady],
+    ["intake","Scans",scansReady?true:(skipSheets||sheetsReady?"skipped":false)],
+    ["sheets","Contact sheets",skipSheets?"skipped":sheetsReady],
+    ["publish","Publish",published],
+  ];
+  const current=stages.findIndex(([, ,state])=>!state);
+  return <nav className="sl-progress" aria-label="Workshop stages">
+    {stages.map(([id,label,state],index)=><a key={id} href={`#refresh-${id}`} className={state?"done":index===current?"current":""} aria-current={index===current?"step":undefined}>
+      <span className="sl-film-rail" aria-hidden="true"><span className="sl-film-frame">
+        <span className="sl-film-serial">{String(index+1).padStart(2,"0")}</span>
+        <span className="sl-film-locator">{state?<RefreshIcon name={state==="skipped"?"Minus":"Check"} size={12}/>:index===current?<b/>:<><i/><i/></>}</span>
+      </span></span>
+      <span className="sl-film-caption">{label}<span className="sl-sr-only">{state===true?", complete":state==="skipped"?", skipped":""}</span></span>
+    </a>)}
+  </nav>;
 }
 
 function useWorkshopDriveTrial(enabled,setDriveLink,directTransfers) {
@@ -3902,7 +3922,12 @@ function App() {
             <button key={item.id} aria-label={item.aria} aria-current={tab===item.id?"page":undefined} onClick={()=>setTab(item.id)}>{item.label}</button>)}
         </nav>
         <div className="sl-header-actions">
-          <div className="sl-counts"><strong>{customers.length.toLocaleString()}</strong> customers <span>/</span> <strong>{orders.length.toLocaleString()}</strong> orders</div>
+          <div className="sl-counts" role="img" aria-label={`${customers.length.toLocaleString()} customers, ${orders.length.toLocaleString()} orders`}>
+            {[["Customers",customers.length],["Orders",orders.length]].map(([label,count])=><div className="sl-count-bank" key={label} aria-hidden="true">
+              <div className="sl-count-digits">{[...String(count).padStart(4,"0")].map((digit,index)=><span key={index}><span className="sl-count-glyph">{digit}</span></span>)}</div>
+              <span className="sl-count-label">{label}</span>
+            </div>)}
+          </div>
           <div className="sl-theme-mode" role="group" aria-label="Light or dark appearance">
             <button aria-label="Dark theme" aria-pressed={theme!=="day"} onClick={()=>setTheme("night")} title="Dark theme"><RefreshIcon name="Moon"/></button>
             <button aria-label="Light theme" aria-pressed={theme==="day"} onClick={()=>setTheme("day")} title="Light theme"><RefreshIcon name="Sun"/></button>

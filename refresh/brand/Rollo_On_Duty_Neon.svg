@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="still" width="124" height="34" viewBox="0 0 124 34" role="img" aria-label="Rollo is on duty">
+        <style>
+          svg:has(.daylight:target) {
+            --face: #e1eee4;
+            --rim: #82a595;
+            --corner: #6e927e;
+            --lettering: #0b6248;
+            --spark: #337f5c;
+            --glow-low: #86d7a46e;
+            --glow-mid: #86d7a499;
+            --glow-high: #86d7a4d4;
+            --halo-low: #f1fff136;
+            --halo-mid: #f1fff160;
+            --halo-high: #f1fff18f;
+          }
+          .tube {
+            stroke: var(--lettering, #b2f7cf);
+            filter: brightness(1.06) drop-shadow(0 0 1.7px var(--glow-mid, #63f2aaae)) drop-shadow(0 0 3px var(--halo-mid, #3cd68952));
+          }
+          @media (prefers-reduced-motion: no-preference) {
+            .tube { animation: neon-breathe 4.8s ease-in-out infinite; }
+          }
+          svg:target .tube, svg:has(#daylight-still:target) .tube { animation: none; }
+          @keyframes neon-breathe {
+            0%, 100% { filter: brightness(1) drop-shadow(0 0 1.3px var(--glow-low, #63f2aa8a)) drop-shadow(0 0 2.5px var(--halo-low, #3cd68938)); }
+            50% { filter: brightness(1.13) drop-shadow(0 0 2.1px var(--glow-high, #63f2aad1)) drop-shadow(0 0 3.8px var(--halo-high, #3cd68972)); }
+          }
+        </style>
+        <g id="daylight" class="daylight"/>
+        <g id="daylight-still" class="daylight"/>
+        <path d="M7 2h110l5 5v20l-5 5H7l-5-5V7Z" style="fill:var(--face,#16221b);stroke:var(--rim,#375548)"/>
+        <path d="M17 6H8l-2 2v4m101 16h9l2-2v-4" fill="none" style="stroke:var(--corner,#4c8068)" stroke-width=".8"/>
+        <g class="tube" fill="none" stroke="#b2f7cf" stroke-linecap="round" stroke-linejoin="round">
+          <path stroke-width="1.7" d="M13 24c3.4-4.3 7-12.2 7.5-16M13.6 12c3.7-5 14.7-6.3 15.5-1 .6 3.5-3.7 6.6-10.4 7 4.8-.3 4 6.1 8 6.1 2 0 3.6-1.8 5-3.5m7.1-3.5c-2-3.4-6.4-.6-7.3 3.2-.6 2.7 1.6 4.1 4 2.8 2.8-1.5 4.2-4.9 3.3-6.1 1.1 1 3.4.7 4.7-.7m-1.2 2.1c3.3-2.5 8.8-8.3 7.2-10.6-1.7-2.4-6.6 6.2-7.5 10.7-.7 3.4.1 5.2 2.1 5.2 2 0 4-2.6 5.3-4.9m-.4.1c3.8-3 9-9.3 7.4-11.1-1.9-1.9-6.5 6.2-7.4 10.9-.6 3.4.2 5 2.2 5 2 0 3.5-2 4.8-4.3m7.6-2.2c-1.8-3.3-6.1-.5-7 3.2-.7 2.8 1.6 4.2 4 2.8 2.5-1.5 4.2-4.7 3-6 1.1 1 2.9.7 4.1-.1"/>
+          <path stroke-width="1.12" d="M76 10v5m6-5h-2.6v2.5h2.6V15h-2.6m9-5h3.6v5h-3.6zm7.5 5v-5l3.4 5v-5M76 25v-6h3.2l1.3 1.3v3.4L79.2 25H76m8-6v4.8l1.2 1.2h2l1.2-1.2V19m3.2 0H97m-2.7 0v6m5.6-6 2.4 3 2.4-3m-2.4 3v3"/>
+        </g>
+        <path d="M111 11.5q.2 3.8 3.5 4-3.3.3-3.5 4-.3-3.7-3.5-4 3.2-.2 3.5-4Z" style="fill:var(--spark,#75d8a6)"/>
+      </svg>

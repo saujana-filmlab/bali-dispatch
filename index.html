@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-analog-ui-20261123">
+<head><meta name="dispatch-release" content="workshop-v3-order-status-20261123">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -3504,7 +3504,7 @@ function useRealDriveTransfers() {
   }
   function enqueue(batch,folder,groups,orderNo) {
     let job=jobs.current.find(job=>job.batch===batch);
-    if(!job){job={batch,folder,orderNo,files:[],sheetTasks:new Map(),expanded:false};jobs.current.push(job);}
+    if(!job){job={batch,folder,orderNo,files:[],sheetTasks:new Map(),expanded:false,retryCount:0};jobs.current.push(job);}
     if(job.folder!==folder||job.orderNo.trim()!==orderNo.trim())return false;
     for(const group of groups){
       const roll="roll-"+String(group.index+1).padStart(2,"0");
@@ -3525,7 +3525,10 @@ function useRealDriveTransfers() {
   function retryFailed(batch){
     const job=jobs.current.find(job=>job.batch===batch);
     if(!WORKSHOP_UPLOADS||!job||inFlight(job))return;
-    for(const file of job.files)if(file.state==="error"){file.state="queued";file.error="";}
+    const failedFiles=job.files.filter(file=>file.state==="error");
+    if(!failedFiles.length)return;
+    job.retryCount++;
+    for(const file of failedFiles){file.state="queued";file.error="";}
     update();pump();
   }
   function done(job){return job.files.every(file=>file.state==="done")&&[...job.sheetTasks.values()].every(task=>task.state==="done");}
@@ -3619,6 +3622,11 @@ function OrderStatusDriveLink({folder}){
 function UploadNote({job,manager,interrupted=false}){
   const number=job.orderNo||"draft";
   const allScansSent=job.total>0&&job.sent===job.total;
+  const failedFiles=WORKSHOP_UPLOADS&&!interrupted?job.files.filter(file=>file.state==="error"):[];
+  const summary=allScansSent&&job.error
+    ? "Scans reached Drive, but one roll did not finish."
+    : `${job.sent} of ${job.total} scans confirmed.`;
+  const nextStep=failedFiles.length?"Select Retry missing files to try again.":"Please update in Drive.";
   return <article className="sl-order-status-row sl-upload-note" data-stage={job.done?"done":"error"} aria-label={(job.done?"Completed upload for order ":"Incomplete upload for order ")+number}>
     <div className="sl-order-status-top">
       <span className="sl-order-status-icon"><RefreshIcon name={job.done?"Check":"TriangleAlert"} size={15}/></span>
@@ -3626,12 +3634,37 @@ function UploadNote({job,manager,interrupted=false}){
       <button type="button" className="sl-icon-button" aria-label={"Dismiss upload note for order "+number} title="Dismiss upload note" onClick={()=>interrupted?manager.dismissInterrupted(job.batch):manager.dismiss(job.batch)}><RefreshIcon name="X" size={15}/></button>
     </div>
     {!job.done&&<>
-      <p>{allScansSent&&job.error?"Scans reached Drive, but one roll did not finish.":job.sent+" of "+job.total+" scans confirmed. Please update in Drive."}</p>
-      {WORKSHOP_UPLOADS&&!interrupted&&job.files?.filter(file=>file.state==="error").map((file,i)=><p key={i}>{file.error}</p>)}
-      {WORKSHOP_UPLOADS&&!interrupted&&job.files?.some(file=>file.state==="error")&&<button type="button" className="sl-secondary" onClick={()=>manager.retryFailed(job.batch)}>Retry missing files</button>}
+      <p>{summary} {nextStep}</p>
+      {failedFiles.map((file,i)=><p key={i}>{file.error}</p>)}
+      {failedFiles.length>0&&<button type="button" className="sl-secondary" onClick={()=>manager.retryFailed(job.batch)}>Retry missing files</button>}
       <OrderStatusDriveLink folder={job.folder}/>
     </>}
   </article>;
+}
+
+function OrderUploadAnnouncements({transfers}){
+  const previousOutcomes=React.useRef(new Map());
+  const [announcement,setAnnouncement]=React.useState({id:0,text:""});
+
+  React.useEffect(()=>{
+    const outcomes=new Map();
+    const messages=[];
+    for(const job of transfers){
+      if(job.inFlight)continue;
+      const outcome=job.done?"Upload complete":"Upload incomplete";
+      const attempt=`${outcome}:${job.files.length}:${job.retryCount}`;
+      outcomes.set(job.batch,attempt);
+      if(previousOutcomes.current.get(job.batch)!==attempt){
+        messages.push(`Order ${job.orderNo||"draft"}. ${outcome}.`);
+      }
+    }
+    previousOutcomes.current=outcomes;
+    if(messages.length)setAnnouncement(previous=>({id:previous.id+1,text:messages.join(" ")}));
+  },[transfers]);
+
+  return <div className="sl-sr-only" role="status" aria-live="polite" aria-atomic="true">
+    <span key={announcement.id}>{announcement.text}</span>
+  </div>;
 }
 
 function OrderStatusTray({manager,demo}){
@@ -3915,6 +3948,7 @@ function App() {
           })}
         </div>
       )}
+      <OrderUploadAnnouncements transfers={directTransfers.transfers}/>
       <header className="dispatch-header sl-header">
         <div className="sl-brand sl-brand-lockup"><img src={theme==="day"?"/refresh/brand/lockup-light.png":"/refresh/brand/lockup-dark.png"} width="512" height="154" alt="Saujana Film Lab Bali / Darkroom Dispatch"/></div>
         <nav className="sl-nav" aria-label="Sections">

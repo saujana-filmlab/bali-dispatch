@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta name="dispatch-release" content="workshop-v3-order-status-20261123">
+<head><meta name="dispatch-release" content="workshop-v3-spool-sync-20261127">
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Saujana - Darkroom Dispatch</title>
@@ -266,7 +266,7 @@ input,textarea{
       .registry-detail>div{height:auto!important}
     }
   </style>
-<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-analog-ui-20261123"><script src="/refresh/lucide.js"></script></head>
+<link rel="stylesheet" href="/refresh/refresh.css?v=workshop-v3-spool-sync-20261127"><script src="/refresh/lucide.js"></script></head>
 <body>
 <div id="root"></div>
 <script type="text/babel" src="contact-sheet-studio.jsx?v=20261105-drive-edit"></script>
@@ -345,6 +345,7 @@ const API_RETRY_ACTIONS = new Set([
 const WORKER_ACTIONS = new Set([
   "browseDriveFolder",
   "browseDriveThumbnail",
+  "getSpoolSoldCounts",
   "workshopUploadRoll",
   "workshopUploadSession",
   "listDriveScans",
@@ -4044,7 +4045,51 @@ const DEFAULT_STOCK = [
 ];
 
 // ── STOCK TRACKER COMPONENT ───────────────────────────────
+function applySpoolSoldCounts(stock,data,previous=new Set()){
+  if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data.day)||!Array.isArray(data.rows))throw Error(data?.error||"Spool counts are unavailable.");
+  const counts=new Map();
+  for(const {stockId,sold} of data.rows){
+    if(typeof stockId!=="string"||!stockId||!Number.isSafeInteger(sold)||sold<0||counts.has(stockId))throw Error("Spool returned invalid sold counts.");
+    counts.set(stockId,sold);
+  }
+  let matched=0,units=0;
+  const appliedIds=new Set();
+  const nextStock=stock.map(cat=>({...cat,items:(cat.items||[]).map(item=>{
+    const id=String(item.id??"");
+    if(item.visible===false||!counts.has(id))return item;
+    const sold=counts.get(id);
+    counts.delete(id);
+    if(sold===0&&!previous.has(id))return item;
+    appliedIds.add(id);
+    matched++;
+    units+=sold;
+    return {...item,sold};
+  })}));
+  const unmatched=[...counts.values()].filter(sold=>sold>0).length+(Array.isArray(data.unmatched)?data.unmatched.length:0);
+  return {nextStock,matched,units,unmatched,appliedIds};
+}
+
 function StockTracker({orderStatus}) {
+  const [spoolSyncBusy,setSpoolSyncBusy]=useState(false);
+  const [spoolSyncStatus,setSpoolSyncStatus]=useState("");
+  const [spoolSyncClosed,setSpoolSyncClosed]=useState(false);
+  const [spoolSyncDay,setSpoolSyncDay]=useState(null);
+  const spoolSyncedIds=useRef(new Set());
+  async function syncSpoolSold(){
+    setSpoolSyncBusy(true);
+    try{
+      const data=await apiCall("getSpoolSoldCounts");
+      if(data?.finalized){setSpoolSyncClosed(true);setSpoolSyncStatus("Spool sales were already finalized for today.");return;}
+      const previous=spoolSyncedIds.current;
+      const {matched,units,unmatched,appliedIds}=applySpoolSoldCounts(stock,data,previous);
+      setStock(current=>applySpoolSoldCounts(current,data,previous).nextStock);
+      spoolSyncedIds.current=appliedIds;
+      setSpoolSyncDay(matched?data.day:null);
+      setSpoolSyncStatus(matched?units+" Spool units synced across "+matched+" items."+(unmatched?" "+unmatched+" unmatched; not applied.":""):unmatched?"No matched sales. "+unmatched+" items need matching.":"No Spool sales to sync today.");
+    }catch(error){setSpoolSyncStatus(error.message||"Could not sync Spool sales.");}
+    finally{setSpoolSyncBusy(false);}
+  }
+
   const cachedStock = readStockCache();
   const [stockView,setStockView]=useState("count");
   const [countSearch,setCountSearch]=useState("");
@@ -4235,6 +4280,9 @@ function StockTracker({orderStatus}) {
   }
 
   async function loadStock() {
+    setSpoolSyncDay(null);
+    setSpoolSyncStatus("");
+    spoolSyncedIds.current=new Set();
     setLoading(stock.length === 0);
     setRefreshing(true);
     setStockRefreshStatus("working");
@@ -4302,6 +4350,7 @@ function StockTracker({orderStatus}) {
   async function saveFinalizedStockWithHistory(beforeStock, finalizedStock, reportText) {
     const combined = await apiCall("finalizeStock", {
       action: "finalize",
+      ...(spoolSyncDay?{spoolDay:spoolSyncDay}:{}),
       beforeStock,
       stock: finalizedStock,
       afterStock: finalizedStock,
@@ -4310,7 +4359,7 @@ function StockTracker({orderStatus}) {
 
     if (combined?.success) return combined;
     const canFallback = /unknown action/i.test(String(combined?.error || ""));
-    if (!canFallback) {
+    if (!canFallback || spoolSyncDay) {
       throw new Error(combined?.error || "Could not save stock");
     }
 
@@ -4320,6 +4369,8 @@ function StockTracker({orderStatus}) {
   }
 
   async function finalizeAndGenerateReport() {
+    if(spoolSyncBusy||saving)return;
+    if(spoolSyncDay&&stock.some(cat=>(cat.items||[]).some(item=>item.visible!==false&&item.sold>item.qty))){showToast("Check sold counts: one or more exceed current stock.");return;}
     setSaving(true);
     try {
       const redemptions=await SaujanaRollCall.loadDailyReport((action,data)=>apiCall(action,{...data,adminKey:getContactSheetAdminKey()}));
@@ -4327,10 +4378,11 @@ function StockTracker({orderStatus}) {
       const reportText = buildReportText(stock,redemptions);
       const finalizedStock = finalizeStock(stock);
       const res = await saveFinalizedStockWithHistory(stock, finalizedStock, reportText);
-      const savedStock = markStockSaved(finalizedStock, res.timestamp);
+      const savedStock = spoolSyncDay&&Array.isArray(res.history?.afterStock)?normalizeStock(res.history.afterStock):markStockSaved(finalizedStock,res.timestamp);
       setStock(savedStock);
       writeStockCache(savedStock);
       setReport(reportText);
+      if(spoolSyncDay){setSpoolSyncDay(null);setSpoolSyncClosed(true);setSpoolSyncStatus("Today's Spool sales finalized.");}
       if (res.history) {
         const nextLocalHistory = [res.history, ...readLocalStockHistory()].slice(0, 30);
         writeLocalStockHistory(nextLocalHistory);
@@ -4580,7 +4632,10 @@ function StockTracker({orderStatus}) {
         </section>
       </div>
       </div>
-      <aside className="sl-handover"><span className="sl-eyebrow">End of day</span><h2>Daily handover</h2><p>{new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Makassar",day:"numeric",month:"short",year:"numeric"}).format(new Date())} / Bali</p><dl><div><dt>Stock sold</dt><dd>{stock.reduce((sum,category)=>sum+(category.items||[]).filter(item=>item.visible!==false).reduce((n,item)=>n+(Number(item.sold)||0),0),0)}</dd></div><div><dt>Roll Call used</dt><dd>{rollCallReport?.items.length||0}</dd></div></dl><button className="sl-primary" disabled={saving} onClick={finalizeAndGenerateReport}><RefreshIcon name="Save" size={16}/>{saving?"Saving...":"Finalize + Save Report"}</button><button className="sl-secondary" disabled={copyingReport||saving} onClick={copyWhatsAppReport}><RefreshIcon name="Copy" size={16}/>{copyingReport?"Preparing...":"Copy WhatsApp"}</button>{report&&<div className="sl-report-output"><div className="sl-section-label"><h3>Saved report</h3><button className="sl-icon-button" title="Copy report" aria-label="Copy saved report" onClick={copyReport}><RefreshIcon name={copied?"Check":"Copy"} size={15}/></button></div><pre>{report}</pre></div>}</aside>
+      <aside className="sl-handover"><span className="sl-eyebrow">End of day</span><h2>Daily handover</h2><p>{new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Makassar",day:"numeric",month:"short",year:"numeric"}).format(new Date())} / Bali</p><dl><div><dt>Stock sold</dt><dd>{stock.reduce((sum,category)=>sum+(category.items||[]).filter(item=>item.visible!==false).reduce((n,item)=>n+(Number(item.sold)||0),0),0)}</dd></div><div><dt>Roll Call used</dt><dd>{rollCallReport?.items.length||0}</dd></div></dl>        <button className="sl-secondary" type="button" aria-label="Sync Spool sales" aria-busy={spoolSyncBusy} disabled={saving||refreshing||loading||spoolSyncBusy||spoolSyncClosed} onClick={syncSpoolSold}>
+          <RefreshIcon name="RefreshCw" size={15}/><span>{spoolSyncBusy?"Syncing":"Sync"}</span><span className="sl-spool-wordmark" aria-hidden="true"/><span>{spoolSyncBusy?"sales...":"sales"}</span>
+        </button>{spoolSyncStatus&&<p role="status">{spoolSyncStatus}</p>}
+<button className="sl-primary" disabled={saving||spoolSyncBusy} onClick={finalizeAndGenerateReport}><RefreshIcon name="Save" size={16}/>{saving?"Saving...":"Finalize + Save Report"}</button><button className="sl-secondary" disabled={copyingReport||saving} onClick={copyWhatsAppReport}><RefreshIcon name="Copy" size={16}/>{copyingReport?"Preparing...":"Copy WhatsApp"}</button>{report&&<div className="sl-report-output"><div className="sl-section-label"><h3>Saved report</h3><button className="sl-icon-button" title="Copy report" aria-label="Copy saved report" onClick={copyReport}><RefreshIcon name={copied?"Check":"Copy"} size={15}/></button></div><pre>{report}</pre></div>}</aside>
     </div>
   </section>;
 

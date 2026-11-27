@@ -974,3 +974,4 @@ body[data-theme=light] .sl-customer-activity>span[data-activity=order]{backgroun
  .sl-customer-editor{padding:20px}
  .sl-customer-editor h2{font-size:23px}
 }
+.sl-spool-wordmark{display:inline-block;flex:none;width:45px;height:15px;background:var(--sl-hover);mask:url('/refresh/brand/spool-wordmark.png') center/contain no-repeat}
